@@ -160,7 +160,7 @@ fun SettingsScreen(
                         Text("App Information", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("PDF Reader Suite — Version 6.0.4", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    Text("PDF Reader Suite — Version 3.0.0", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                     Text("Offline Document Workspace for Android", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                 }
             }
