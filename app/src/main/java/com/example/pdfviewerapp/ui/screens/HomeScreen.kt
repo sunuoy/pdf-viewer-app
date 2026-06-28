@@ -450,14 +450,7 @@ fun HomeScreen(
                                 },
                                 leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
                             )
-                            DropdownMenuItem(
-                                text = { Text("About & Version") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    showAboutDialog = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
-                            )
+
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Exit") },
@@ -842,52 +835,7 @@ fun HomeScreen(
         )
     }
 
-    // About App Dialog
-    if (showAboutDialog) {
-        AlertDialog(
-            onDismissRequest = { showAboutDialog = false },
-            title = { Text("About PDF Reader Suite") },
-            text = {
-                Column {
-                    Text(
-                        text = "Version 3.0.0",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("A high-performance offline PDF & multi-format document workspace for Android built with Jetpack Compose, Coroutines, Room Database, and Storage Access Framework.")
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sunuoy/pdf-viewer-app/releases"))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Cannot open browser link", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Check for Updates on GitHub")
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Developed with ❤️ for seamless document viewing.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = { showAboutDialog = false }) {
-                    Text("Close")
-                }
-            }
-        )
-    }
+
 
     // Settings Dialog
     if (showSettingsDialog) {
