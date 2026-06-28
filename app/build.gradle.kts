@@ -13,8 +13,8 @@ android {
         applicationId = "com.pdfviewerapp.sunuy"
         minSdk = 24
         targetSdk = 36
-        versionCode = 6
-        versionName = "4.0.1"
+        versionCode = 7
+        versionName = "5.0.0"
     }
 
     buildTypes {

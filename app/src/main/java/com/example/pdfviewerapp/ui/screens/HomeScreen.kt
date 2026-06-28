@@ -101,6 +101,23 @@ fun HomeScreen(
     var showSettingsDialog by remember { mutableStateOf(false) }
     var autoSaveLocationPrompt by remember { mutableStateOf(true) }
     var highResRendering by remember { mutableStateOf(true) }
+    var cloudFiles by remember { mutableStateOf<List<com.pdfviewerapp.sunuy.data.entities.CloudFile>>(emptyList()) }
+    var isCloudLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentTab) {
+        if (currentTab == HomeTab.CLOUD_DRIVE) {
+            isCloudLoading = true
+            val unifiedList = mutableListOf<com.pdfviewerapp.sunuy.data.entities.CloudFile>()
+            com.pdfviewerapp.sunuy.services.GoogleDriveManager.getPdfFiles { gFiles ->
+                unifiedList.addAll(gFiles)
+                com.pdfviewerapp.sunuy.services.OneDriveManager.getPdfFiles { oFiles ->
+                    unifiedList.addAll(oFiles)
+                    cloudFiles = unifiedList
+                    isCloudLoading = false
+                }
+            }
+        }
+    }
     
     // Initialize PDFBox asynchronously to optimize cold startup speed
     val pdfTextService = remember { PdfTextService() }
@@ -403,12 +420,20 @@ fun HomeScreen(
                 title = {
                     Column {
                         Text(
-                            text = if (currentTab == HomeTab.RECENTS) "PDF Reader" else "PDF Document Editor",
+                            text = when (currentTab) {
+                                HomeTab.RECENTS -> "PDF Reader"
+                                HomeTab.CLOUD_DRIVE -> "Cloud File Manager"
+                                HomeTab.EDITOR -> "PDF Document Editor"
+                            },
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Text(
-                            text = if (currentTab == HomeTab.RECENTS) "Your offline document workspace" else "Convert and export your files",
+                            text = when (currentTab) {
+                                HomeTab.RECENTS -> "Your offline document workspace"
+                                HomeTab.CLOUD_DRIVE -> "Unified Google Drive & OneDrive PDF library"
+                                HomeTab.EDITOR -> "Convert and export your files"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.secondary
                         )
@@ -477,6 +502,12 @@ fun HomeScreen(
                     onClick = { currentTab = HomeTab.RECENTS },
                     icon = { Icon(Icons.Default.History, contentDescription = "Recents") },
                     label = { Text("Recents") }
+                )
+                NavigationBarItem(
+                    selected = currentTab == HomeTab.CLOUD_DRIVE,
+                    onClick = { currentTab = HomeTab.CLOUD_DRIVE },
+                    icon = { Icon(Icons.Default.CloudSync, contentDescription = "Cloud Drive") },
+                    label = { Text("Cloud Drive") }
                 )
                 NavigationBarItem(
                     selected = currentTab == HomeTab.EDITOR,
@@ -611,6 +642,76 @@ fun HomeScreen(
                                     }
                                 }
                             )
+                        }
+                    }
+                }
+            }
+        } else if (currentTab == HomeTab.CLOUD_DRIVE) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    text = "Connected Cloud Documents",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+                if (isCloudLoading) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (cloudFiles.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No cloud PDF files found. Connect to Google Drive or OneDrive.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
+                        items(cloudFiles) { file ->
+                            Card(
+                                onClick = { Toast.makeText(context, "Opening ${file.name} from ${file.source}", Toast.LENGTH_SHORT).show() },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(2.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PictureAsPdf,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(file.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = if (file.source == "google_drive") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
+                                            ) {
+                                                Text(
+                                                    text = if (file.source == "google_drive") "Google Drive" else "OneDrive",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(file.getFormattedSize(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1085,6 +1186,7 @@ private fun shareUri(context: Context, uri: Uri, mimeType: String) {
 
 enum class HomeTab {
     RECENTS,
+    CLOUD_DRIVE,
     EDITOR
 }
 
