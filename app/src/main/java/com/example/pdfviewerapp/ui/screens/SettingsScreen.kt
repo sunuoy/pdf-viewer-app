@@ -139,7 +139,7 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Automatic Cloud Sync", fontWeight = FontWeight.SemiBold)
-                            Text("Background sync with Dropbox, Google Drive & OneDrive when connected to Wi-Fi", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                            Text("Background sync with Google Drive & OneDrive when connected to Wi-Fi", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                         }
                         Switch(
                             checked = autoSyncCloud,
@@ -164,7 +164,7 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Version 4.0.0",
+                        text = "Version 4.0.1",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleSmall

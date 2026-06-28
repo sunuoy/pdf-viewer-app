@@ -13,8 +13,8 @@ android {
         applicationId = "com.pdfviewerapp.sunuy"
         minSdk = 24
         targetSdk = 36
-        versionCode = 5
-        versionName = "4.0.0"
+        versionCode = 6
+        versionName = "4.0.1"
     }
 
     buildTypes {
@@ -82,9 +82,7 @@ dependencies {
   implementation("io.noties.markwon:core:4.6.2")
   implementation("org.jsoup:jsoup:1.17.2")
 
-  // Official Dropbox Java/Kotlin SDK & WorkManager
-  implementation("com.dropbox.core:dropbox-core-sdk:7.0.0")
-  implementation("androidx.work:work-runtime-ktx:2.10.0")
+
 
   // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)

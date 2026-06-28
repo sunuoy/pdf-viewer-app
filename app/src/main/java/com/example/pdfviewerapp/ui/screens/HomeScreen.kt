@@ -438,18 +438,7 @@ fun HomeScreen(
                                 },
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Dropbox Cloud Sync") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    try {
-                                        com.pdfviewerapp.sunuy.services.DropboxManager.startAuthentication(context, "YOUR_APP_KEY_HERE")
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Dropbox auth initiated", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
-                            )
+
                             DropdownMenuItem(
                                 text = { Text("Google Drive Sync") },
                                 onClick = {
