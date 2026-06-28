@@ -85,6 +85,8 @@ fun HomeScreen(
     var showMergeSuccessDialog by remember { mutableStateOf(false) }
     var generatedFile by remember { mutableStateOf<File?>(null) }
     var generatedMimeType by remember { mutableStateOf("") }
+    var selectedInputUri by remember { mutableStateOf<Uri?>(null) }
+    var processedFileUri by remember { mutableStateOf<Uri?>(null) }
     var urisToMerge by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var mergedFileUri by remember { mutableStateOf<Uri?>(null) }
     
@@ -122,21 +124,22 @@ fun HomeScreen(
         }
     }
     
-    val editorFilePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        uri?.let {
+    val saveEditorFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { destUri: Uri? ->
+        destUri?.let { targetUri ->
+            val inputUri = selectedInputUri ?: return@let
             val tool = activeTool ?: return@let
             isProcessing = true
-            processingMessage = "Extracting contents from PDF..."
+            processingMessage = "Processing document..."
             scope.launch {
                 try {
-                    val originalName = getFileName(context, uri) ?: "document.pdf"
+                    val originalName = getFileName(context, inputUri) ?: "document.pdf"
                     when (tool) {
                         EditorTool.PDF_TO_IMAGE -> {
                             processingMessage = "Rendering PDF pages to images..."
                             withContext(Dispatchers.IO) {
-                                val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                                val pfd = context.contentResolver.openFileDescriptor(inputUri, "r")
                                 if (pfd != null) {
                                     val renderer = PdfRenderer(pfd)
                                     val imageFolder = File(context.cacheDir, "pdf_pages_${System.currentTimeMillis()}")
@@ -160,58 +163,19 @@ fun HomeScreen(
                                     renderer.close()
                                     pfd.close()
                                     
-                                    processingMessage = "Zipping high-res images..."
-                                    val zipFile = File(context.cacheDir, "${originalName.substringBeforeLast(".")}_images.zip")
-                                    ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
-                                        for (file in imageFiles) {
-                                            val entry = ZipEntry(file.name)
-                                            zos.putNextEntry(entry)
-                                            file.inputStream().use { input -> input.copyTo(zos) }
-                                            zos.closeEntry()
+                                    processingMessage = "Saving high-res images archive..."
+                                    context.contentResolver.openOutputStream(targetUri)?.use { outStream ->
+                                        ZipOutputStream(BufferedOutputStream(outStream)).use { zos ->
+                                            for (file in imageFiles) {
+                                                val entry = ZipEntry(file.name)
+                                                zos.putNextEntry(entry)
+                                                file.inputStream().use { input -> input.copyTo(zos) }
+                                                zos.closeEntry()
+                                            }
                                         }
                                     }
-                                    generatedFile = zipFile
-                                    generatedMimeType = "application/zip"
-                                }
-                            }
-                        }
-                        EditorTool.CREATE_ICONS -> {
-                            processingMessage = "Generating 512x512 icon assets..."
-                            withContext(Dispatchers.IO) {
-                                val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-                                if (pfd != null) {
-                                    val renderer = PdfRenderer(pfd)
-                                    val iconFolder = File(context.cacheDir, "pdf_icons_${System.currentTimeMillis()}")
-                                    iconFolder.mkdirs()
-                                    val iconFiles = mutableListOf<File>()
-                                    for (i in 0 until renderer.pageCount) {
-                                        val page = renderer.openPage(i)
-                                        // Render into square 512x512 bitmap for app icons
-                                        val bitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
-                                        bitmap.eraseColor(android.graphics.Color.WHITE)
-                                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                        page.close()
-                                        
-                                        val iconFile = File(iconFolder, "icon_${i + 1}.png")
-                                        FileOutputStream(iconFile).use { out ->
-                                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                                        }
-                                        iconFiles.add(iconFile)
-                                    }
-                                    renderer.close()
-                                    pfd.close()
-                                    
-                                    processingMessage = "Packing icon assets archive..."
-                                    val zipFile = File(context.cacheDir, "${originalName.substringBeforeLast(".")}_icons.zip")
-                                    ZipOutputStream(BufferedOutputStream(FileOutputStream(zipFile))).use { zos ->
-                                        for (file in iconFiles) {
-                                            val entry = ZipEntry(file.name)
-                                            zos.putNextEntry(entry)
-                                            file.inputStream().use { input -> input.copyTo(zos) }
-                                            zos.closeEntry()
-                                        }
-                                    }
-                                    generatedFile = zipFile
+                                    imageFolder.deleteRecursively()
+                                    processedFileUri = targetUri
                                     generatedMimeType = "application/zip"
                                 }
                             }
@@ -219,7 +183,7 @@ fun HomeScreen(
                         EditorTool.PDF_TO_TEXT -> {
                             processingMessage = "Extracting text from PDF..."
                             withContext(Dispatchers.IO) {
-                                val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                                val pfd = context.contentResolver.openFileDescriptor(inputUri, "r")
                                 var pageCount = 0
                                 if (pfd != null) {
                                     val renderer = PdfRenderer(pfd)
@@ -230,25 +194,24 @@ fun HomeScreen(
                                 
                                 val fullText = StringBuilder()
                                 for (i in 0 until pageCount) {
-                                    val pageText = pdfTextService.extractTextFromPage(context, uri, i)
+                                    val pageText = pdfTextService.extractTextFromPage(context, inputUri, i)
                                     fullText.append(pageText)
                                     if (i < pageCount - 1) {
                                         fullText.append("\n\n--- Page ${i + 2} ---\n\n")
                                     }
                                 }
                                 
-                                val txtFile = File(context.cacheDir, "${originalName.substringBeforeLast(".")}.txt")
-                                FileOutputStream(txtFile).use { out ->
+                                context.contentResolver.openOutputStream(targetUri)?.use { out ->
                                     out.write(fullText.toString().toByteArray(Charsets.UTF_8))
                                 }
-                                generatedFile = txtFile
+                                processedFileUri = targetUri
                                 generatedMimeType = "text/plain"
                             }
                         }
                         EditorTool.PDF_TO_WORD -> {
                             processingMessage = "Extracting text and formatting Word doc..."
                             withContext(Dispatchers.IO) {
-                                val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                                val pfd = context.contentResolver.openFileDescriptor(inputUri, "r")
                                 var pageCount = 0
                                 if (pfd != null) {
                                     val renderer = PdfRenderer(pfd)
@@ -259,14 +222,13 @@ fun HomeScreen(
                                 
                                 val fullText = StringBuilder()
                                 for (i in 0 until pageCount) {
-                                    val pageText = pdfTextService.extractTextFromPage(context, uri, i)
+                                    val pageText = pdfTextService.extractTextFromPage(context, inputUri, i)
                                     fullText.append(pageText)
                                     if (i < pageCount - 1) {
                                         fullText.append("\n\n--- Page ${i + 2} ---\n\n")
                                     }
                                 }
                                 
-                                val docFile = File(context.cacheDir, "${originalName.substringBeforeLast(".")}.doc")
                                 val paragraphs = fullText.toString().split("\n").joinToString("") { line ->
                                     if (line.isBlank()) "<p>&nbsp;</p>" else "<p>${line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</p>"
                                 }
@@ -286,49 +248,46 @@ fun HomeScreen(
                                     </html>
                                 """.trimIndent()
                                 
-                                FileOutputStream(docFile).use { out ->
+                                context.contentResolver.openOutputStream(targetUri)?.use { out ->
                                     out.write(htmlContent.toByteArray(Charsets.UTF_8))
                                 }
-                                generatedFile = docFile
+                                processedFileUri = targetUri
                                 generatedMimeType = "application/msword"
                             }
                         }
                         EditorTool.COMPRESS_PDF -> {
                             processingMessage = "Optimizing and compressing PDF..."
                             withContext(Dispatchers.IO) {
-                                val destFile = File(context.cacheDir, "${originalName.substringBeforeLast(".")}_compressed.pdf")
-                                context.contentResolver.openInputStream(uri)?.use { input ->
-                                    FileOutputStream(destFile).use { output ->
+                                context.contentResolver.openInputStream(inputUri)?.use { input ->
+                                    context.contentResolver.openOutputStream(targetUri)?.use { output ->
                                         input.copyTo(output)
                                     }
                                 }
-                                generatedFile = destFile
+                                processedFileUri = targetUri
                                 generatedMimeType = "application/pdf"
                             }
                         }
                         EditorTool.SPLIT_PDF -> {
                             processingMessage = "Splitting document into single pages..."
                             withContext(Dispatchers.IO) {
-                                val destFile = File(context.cacheDir, "${originalName.substringBeforeLast(".")}_split.pdf")
-                                context.contentResolver.openInputStream(uri)?.use { input ->
-                                    FileOutputStream(destFile).use { output ->
+                                context.contentResolver.openInputStream(inputUri)?.use { input ->
+                                    context.contentResolver.openOutputStream(targetUri)?.use { output ->
                                         input.copyTo(output)
                                     }
                                 }
-                                generatedFile = destFile
+                                processedFileUri = targetUri
                                 generatedMimeType = "application/pdf"
                             }
                         }
                         EditorTool.ROTATE_PDF -> {
                             processingMessage = "Adjusting page rotation..."
                             withContext(Dispatchers.IO) {
-                                val destFile = File(context.cacheDir, "${originalName.substringBeforeLast(".")}_rotated.pdf")
-                                context.contentResolver.openInputStream(uri)?.use { input ->
-                                    FileOutputStream(destFile).use { output ->
+                                context.contentResolver.openInputStream(inputUri)?.use { input ->
+                                    context.contentResolver.openOutputStream(targetUri)?.use { output ->
                                         input.copyTo(output)
                                     }
                                 }
-                                generatedFile = destFile
+                                processedFileUri = targetUri
                                 generatedMimeType = "application/pdf"
                             }
                         }
@@ -344,6 +303,27 @@ fun HomeScreen(
                     isProcessing = false
                 }
             }
+        }
+    }
+
+    val editorFilePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let { inputUri ->
+            val tool = activeTool ?: return@let
+            selectedInputUri = inputUri
+            val originalName = getFileName(context, inputUri) ?: "document.pdf"
+            val baseName = originalName.substringBeforeLast(".")
+            val suggestedName = when (tool) {
+                EditorTool.PDF_TO_IMAGE -> "${baseName}_images.zip"
+                EditorTool.PDF_TO_TEXT -> "${baseName}.txt"
+                EditorTool.PDF_TO_WORD -> "${baseName}.doc"
+                EditorTool.COMPRESS_PDF -> "${baseName}_compressed.pdf"
+                EditorTool.SPLIT_PDF -> "${baseName}_split.pdf"
+                EditorTool.ROTATE_PDF -> "${baseName}_rotated.pdf"
+                else -> "${baseName}_edited.pdf"
+            }
+            saveEditorFileLauncher.launch(suggestedName)
         }
     }
 
@@ -588,14 +568,6 @@ fun HomeScreen(
                 
                 val tools = listOf(
                     EditorToolItem(
-                        tool = EditorTool.CREATE_ICONS,
-                        title = "Create App Icons",
-                        description = "Generate crisp 512x512 PNG icon graphics",
-                        icon = Icons.Default.CropOriginal,
-                        gradientColors = listOf(Color(0xFF7C4DFF), Color(0xFFB388FF)),
-                        badge = "NEW"
-                    ),
-                    EditorToolItem(
                         tool = EditorTool.PDF_TO_IMAGE,
                         title = "PDF to Images",
                         description = "Extract pages as full-res PNG images",
@@ -764,17 +736,18 @@ fun HomeScreen(
     }
 
     // Success Dialog
-    if (showSuccessDialog && generatedFile != null) {
+    if (showSuccessDialog && processedFileUri != null) {
+        val fileName = getFileName(context, processedFileUri!!) ?: "File"
         AlertDialog(
             onDismissRequest = { showSuccessDialog = false },
-            title = { Text("Conversion Successful") },
+            title = { Text("File Saved Successfully") },
             text = {
-                Text("Successfully generated file:\n${generatedFile!!.name}")
+                Text("Successfully saved $fileName to your chosen location.")
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        openFile(context, generatedFile!!, generatedMimeType)
+                        openUri(context, processedFileUri!!, generatedMimeType)
                     }
                 ) {
                     Text("Open")
@@ -786,7 +759,7 @@ fun HomeScreen(
                 ) {
                     TextButton(
                         onClick = {
-                            shareFile(context, generatedFile!!, generatedMimeType)
+                            shareUri(context, processedFileUri!!, generatedMimeType)
                         }
                     ) {
                         Text("Share")
@@ -1000,7 +973,6 @@ enum class HomeTab {
 
 enum class EditorTool {
     PDF_TO_IMAGE,
-    CREATE_ICONS,
     PDF_TO_WORD,
     PDF_TO_TEXT,
     MERGE_PDFS,
