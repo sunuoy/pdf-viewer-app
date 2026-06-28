@@ -140,7 +140,7 @@ fun PdfViewerScreen(
     // Moon+ Reader Auto-Scroll State
     var isAutoScrollActive by remember { mutableStateOf(false) }
     var autoScrollMode by remember { mutableStateOf(AutoScrollMode.BY_PIXEL) }
-    var autoScrollSpeed by remember { mutableStateOf(1.0f) } // 0.5x to 5.0x
+    var autoScrollSpeed by remember { mutableStateOf(0.10f) } // 0.10x to 5.0x
     var rollingBlindY by remember { mutableStateOf(0f) }
     
     // Helper to translate a page
@@ -302,17 +302,19 @@ fun PdfViewerScreen(
         while (isAutoScrollActive) {
             when (autoScrollMode) {
                 AutoScrollMode.BY_PIXEL -> {
-                    val scrollAmount = (4f * autoScrollSpeed).toInt().coerceAtLeast(1)
-                    listState.scrollBy(scrollAmount.toFloat())
+                    val scrollAmount = (3f * autoScrollSpeed).coerceAtLeast(0.2f)
+                    listState.scrollBy(scrollAmount)
                     delay(16L)
                 }
                 AutoScrollMode.BY_LINE -> {
-                    val scrollAmount = (40f * autoScrollSpeed).toInt()
-                    listState.scrollBy(scrollAmount.toFloat())
-                    delay(1200L / autoScrollSpeed.toLong())
+                    val scrollAmount = 60f
+                    listState.scrollBy(scrollAmount)
+                    val delayMs = (1500L / autoScrollSpeed.toDouble()).toLong().coerceAtLeast(100L)
+                    delay(delayMs)
                 }
                 AutoScrollMode.BY_PAGE -> {
-                    delay((4000L / autoScrollSpeed).toLong())
+                    val delayMs = (4000L / autoScrollSpeed.toDouble()).toLong().coerceAtLeast(300L)
+                    delay(delayMs)
                     if (currentPageIndex < pageCount - 1) {
                         listState.animateScrollToItem(currentPageIndex + 1)
                     }
@@ -899,7 +901,7 @@ fun PdfViewerScreen(
                         VerticalDivider(modifier = Modifier.height(24.dp))
                         
                         IconButton(
-                            onClick = { autoScrollSpeed = (autoScrollSpeed - 0.25f).coerceAtLeast(0.5f) }
+                            onClick = { autoScrollSpeed = (autoScrollSpeed - 0.10f).coerceAtLeast(0.10f) }
                         ) {
                             Icon(Icons.Default.Remove, contentDescription = "Slower")
                         }
@@ -911,7 +913,7 @@ fun PdfViewerScreen(
                         )
                         
                         IconButton(
-                            onClick = { autoScrollSpeed = (autoScrollSpeed + 0.25f).coerceAtMost(5.0f) }
+                            onClick = { autoScrollSpeed = (autoScrollSpeed + 0.10f).coerceAtMost(5.0f) }
                         ) {
                             Icon(Icons.Default.Add, contentDescription = "Faster")
                         }
