@@ -834,7 +834,7 @@ fun HomeScreen(
             text = {
                 Column {
                     Text(
-                        text = "Version 3.0.3",
+                        text = "Version 1.0.3",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleMedium
