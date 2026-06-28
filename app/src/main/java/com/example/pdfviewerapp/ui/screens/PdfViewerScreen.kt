@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -948,13 +949,26 @@ fun ZoomableImage(
             .fillMaxSize()
             .clip(RoundedCornerShape(12.dp))
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(1f, 5f)
-                    if (scale > 1f) {
-                        offset = offset + pan
+                detectTapGestures(
+                    onDoubleTap = {
+                        if (scale > 1.2f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                        }
+                    }
+                )
+            }
+            .pointerInput(Unit) {
+                detectTransformGestures { centroid, pan, zoom, _ ->
+                    val newScale = (scale * zoom).coerceIn(1f, 6f)
+                    if (newScale > 1f) {
+                        offset += pan
                     } else {
                         offset = Offset.Zero
                     }
+                    scale = newScale
                 }
             }
     ) {
