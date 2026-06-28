@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.CropOriginal
 import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.RotateRight
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -89,6 +91,8 @@ fun HomeScreen(
     var processedFileUri by remember { mutableStateOf<Uri?>(null) }
     var urisToMerge by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var mergedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var isMenuExpanded by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
     
     // Initialize PDFBox and text service safely
     val pdfTextService = remember {
@@ -402,7 +406,40 @@ fun HomeScreen(
                 },
                 colors = TopAppBarDefaults.largeTopAppBarColors(
                     containerColor = Color.Transparent
-                )
+                ),
+                actions = {
+                    Box {
+                        IconButton(onClick = { isMenuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More options menu",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = isMenuExpanded,
+                            onDismissRequest = { isMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Open File") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "text/markdown", "text/html", "text/*"))
+                                },
+                                leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("About & Version") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    showAboutDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
+                            )
+                        }
+                    }
+                }
             )
         },
         bottomBar = {
@@ -770,6 +807,37 @@ fun HomeScreen(
                     ) {
                         Text("Close")
                     }
+                }
+            }
+        )
+    }
+
+    // About App Dialog
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = { Text("About PDF Reader Suite") },
+            text = {
+                Column {
+                    Text(
+                        text = "Version 3.0.1",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("A high-performance offline PDF & multi-format document workspace for Android built with Jetpack Compose, Coroutines, Room Database, and Storage Access Framework.")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Developed with ❤️ for seamless document viewing.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showAboutDialog = false }) {
+                    Text("Close")
                 }
             }
         )
