@@ -416,7 +416,7 @@ fun HomeScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            LargeTopAppBar(
+            TopAppBar(
                 title = {
                     Column {
                         Text(
