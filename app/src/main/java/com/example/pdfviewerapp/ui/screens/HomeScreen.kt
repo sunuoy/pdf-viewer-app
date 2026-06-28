@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,6 +41,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -95,6 +98,8 @@ fun HomeScreen(
     var selectedInputUri by remember { mutableStateOf<Uri?>(null) }
     var processedFileUri by remember { mutableStateOf<Uri?>(null) }
     var urisToMerge by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var mergeReorderList = remember { mutableStateListOf<Uri>() }
+    var showMergeReorderDialog by remember { mutableStateOf(false) }
     var mergedFileUri by remember { mutableStateOf<Uri?>(null) }
     var isMenuExpanded by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -407,8 +412,9 @@ fun HomeScreen(
             if (uris.size < 2) {
                 Toast.makeText(context, "Please select 2 or more PDF files to merge.", Toast.LENGTH_LONG).show()
             } else {
-                urisToMerge = uris
-                saveMergeFileLauncher.launch("merged_document.pdf")
+                mergeReorderList.clear()
+                mergeReorderList.addAll(uris)
+                showMergeReorderDialog = true
             }
         }
     }
@@ -936,6 +942,100 @@ fun HomeScreen(
                     ) {
                         Text("Close")
                     }
+                }
+            }
+        )
+    }
+
+    // Merge PDFs Reorder Dialog
+    if (showMergeReorderDialog) {
+        AlertDialog(
+            onDismissRequest = { showMergeReorderDialog = false },
+            title = { Text("Reorder PDFs to Merge", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("Adjust sequence using Move Up / Down buttons:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        itemsIndexed(mergeReorderList) { index, uri ->
+                            val fileName = getFileName(context, uri) ?: "Document_${index + 1}.pdf"
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${index + 1}.",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = fileName,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Row {
+                                        IconButton(
+                                            onClick = {
+                                                if (index > 0) {
+                                                    val item = mergeReorderList.removeAt(index)
+                                                    mergeReorderList.add(index - 1, item)
+                                                }
+                                            },
+                                            enabled = index > 0
+                                        ) {
+                                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up")
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                if (index < mergeReorderList.size - 1) {
+                                                    val item = mergeReorderList.removeAt(index)
+                                                    mergeReorderList.add(index + 1, item)
+                                                }
+                                            },
+                                            enabled = index < mergeReorderList.size - 1
+                                        ) {
+                                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (mergeReorderList.size < 2) {
+                            Toast.makeText(context, "At least 2 files required to merge.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            urisToMerge = mergeReorderList.toList()
+                            showMergeReorderDialog = false
+                            saveMergeFileLauncher.launch("merged_document.pdf")
+                        }
+                    }
+                ) {
+                    Text("Merge & Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMergeReorderDialog = false }) {
+                    Text("Cancel")
                 }
             }
         )
