@@ -12,7 +12,6 @@ import com.pdfviewerapp.sunuy.ui.screens.SplashScreen
 import com.pdfviewerapp.sunuy.ui.screens.HomeScreen
 import com.pdfviewerapp.sunuy.ui.screens.PdfViewerScreen
 import com.pdfviewerapp.sunuy.ui.screens.BookmarkScreen
-import com.pdfviewerapp.sunuy.ui.screens.SettingsScreen
 
 import androidx.navigation3.runtime.NavKey
 
@@ -42,21 +41,11 @@ fun MainNavigation(
             }
           )
         }
-
         entry<Home> {
           HomeScreen(
             onPdfSelected = { path ->
               backStack.add(PdfViewer(path))
             },
-            onNavigateToSettings = {
-              backStack.add(SettingsNavKey)
-            },
-            modifier = Modifier.fillMaxSize()
-          )
-        }
-        entry<SettingsNavKey> {
-          SettingsScreen(
-            onBack = { backStack.removeLastOrNull() },
             modifier = Modifier.fillMaxSize()
           )
         }

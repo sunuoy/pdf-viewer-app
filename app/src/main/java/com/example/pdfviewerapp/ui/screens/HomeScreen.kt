@@ -74,7 +74,6 @@ import java.util.zip.ZipOutputStream
 @Composable
 fun HomeScreen(
     onPdfSelected: (String) -> Unit,
-    onNavigateToSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -412,7 +411,7 @@ fun HomeScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
                 ),
                 actions = {
@@ -432,7 +431,7 @@ fun HomeScreen(
                                 text = { Text("Settings") },
                                 onClick = {
                                     isMenuExpanded = false
-                                    onNavigateToSettings()
+                                    showSettingsDialog = true
                                 },
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
                             )
@@ -848,7 +847,7 @@ fun HomeScreen(
             text = {
                 Column {
                     Text(
-                        text = "Version 1.0.3",
+                        text = "Version 6.0.1",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleMedium

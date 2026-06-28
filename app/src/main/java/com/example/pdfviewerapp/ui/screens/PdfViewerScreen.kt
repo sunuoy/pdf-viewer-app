@@ -180,6 +180,14 @@ fun PdfViewerScreen(
             ttsService.shutdown()
             bookSpeechManager.release()
             translationService.closeActiveTranslator()
+            bitmapCache.values.forEach {
+                try {
+                    if (!it.isRecycled) it.recycle()
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+            bitmapCache.clear()
             try {
                 pdfRenderer?.close()
                 parcelFileDescriptor?.close()
