@@ -7,10 +7,10 @@ plugins {
 }
 
 android {
-    namespace = "com.example.pdfviewerapp"
+    namespace = "com.pdfviewerapp.sunuy"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.example.pdfviewerapp"
+        applicationId = "com.pdfviewerapp.sunuy"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

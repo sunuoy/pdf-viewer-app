@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp
+package com.pdfviewerapp.sunuy
 
 import androidx.navigation3.runtime.NavKey
 import kotlinx.serialization.Serializable

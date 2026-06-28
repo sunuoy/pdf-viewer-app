@@ -1,9 +1,9 @@
-package com.example.pdfviewerapp.ui.main
+package com.pdfviewerapp.sunuy.ui.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.pdfviewerapp.data.DataRepository
-import com.example.pdfviewerapp.ui.main.MainScreenUiState.Success
+import com.pdfviewerapp.sunuy.data.DataRepository
+import com.pdfviewerapp.sunuy.ui.main.MainScreenUiState.Success
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch

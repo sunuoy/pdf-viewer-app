@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp.theme
+package com.pdfviewerapp.sunuy.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme

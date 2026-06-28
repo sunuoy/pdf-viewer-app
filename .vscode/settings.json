@@ -1,7 +1,7 @@
 {
     "java.configuration.updateBuildConfiguration": "automatic",
-    "java.import.gradle.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr",
-    "gradle.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr",
-    "java.jdt.ls.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr",
-    "kotlin.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr"
+    "java.import.gradle.java.home": "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.19.10-hotspot",
+    "gradle.java.home": "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.19.10-hotspot",
+    "java.jdt.ls.java.home": "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.19.10-hotspot",
+    "kotlin.java.home": "C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.19.10-hotspot"
 }

@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp
+package com.pdfviewerapp.sunuy
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -8,10 +8,10 @@ import android.app.Activity
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
-import com.example.pdfviewerapp.ui.screens.SplashScreen
-import com.example.pdfviewerapp.ui.screens.HomeScreen
-import com.example.pdfviewerapp.ui.screens.PdfViewerScreen
-import com.example.pdfviewerapp.ui.screens.BookmarkScreen
+import com.pdfviewerapp.sunuy.ui.screens.SplashScreen
+import com.pdfviewerapp.sunuy.ui.screens.HomeScreen
+import com.pdfviewerapp.sunuy.ui.screens.PdfViewerScreen
+import com.pdfviewerapp.sunuy.ui.screens.BookmarkScreen
 
 import androidx.navigation3.runtime.NavKey
 

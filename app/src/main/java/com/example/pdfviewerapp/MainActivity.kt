@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp
+package com.pdfviewerapp.sunuy
 
 import android.content.Intent
 import android.net.Uri
@@ -11,10 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.example.pdfviewerapp.theme.PDFViewerAppTheme
-import com.example.pdfviewerapp.data.AppDatabase
-import com.example.pdfviewerapp.data.entities.RecentPdf
-import com.example.pdfviewerapp.ui.screens.getFileName
+import com.pdfviewerapp.sunuy.theme.PDFViewerAppTheme
+import com.pdfviewerapp.sunuy.data.AppDatabase
+import com.pdfviewerapp.sunuy.data.entities.RecentPdf
+import com.pdfviewerapp.sunuy.ui.screens.getFileName
 import androidx.navigation3.runtime.NavKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

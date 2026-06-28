@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp.data.entities
+package com.pdfviewerapp.sunuy.data.entities
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey

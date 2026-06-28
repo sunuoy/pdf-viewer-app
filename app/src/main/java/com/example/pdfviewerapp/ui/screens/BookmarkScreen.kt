@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp.ui.screens
+package com.pdfviewerapp.sunuy.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,9 +17,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.pdfviewerapp.data.AppDatabase
-import com.example.pdfviewerapp.data.entities.Bookmark
-import com.example.pdfviewerapp.ui.PdfSessionViewModel
+import com.pdfviewerapp.sunuy.data.AppDatabase
+import com.pdfviewerapp.sunuy.data.entities.Bookmark
+import com.pdfviewerapp.sunuy.ui.PdfSessionViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.ComponentActivity
 import kotlinx.coroutines.launch

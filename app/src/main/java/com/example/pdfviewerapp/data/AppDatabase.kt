@@ -1,11 +1,11 @@
-package com.example.pdfviewerapp.data
+package com.pdfviewerapp.sunuy.data
 
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import com.example.pdfviewerapp.data.entities.Bookmark
-import com.example.pdfviewerapp.data.entities.RecentPdf
+import com.pdfviewerapp.sunuy.data.entities.Bookmark
+import com.pdfviewerapp.sunuy.data.entities.RecentPdf
 
 @Database(entities = [RecentPdf::class, Bookmark::class], version = 1, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {

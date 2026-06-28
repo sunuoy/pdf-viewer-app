@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp.ui.screens
+package com.pdfviewerapp.sunuy.ui.screens
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween

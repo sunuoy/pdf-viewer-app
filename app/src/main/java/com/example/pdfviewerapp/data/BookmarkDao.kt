@@ -1,7 +1,7 @@
-package com.example.pdfviewerapp.data
+package com.pdfviewerapp.sunuy.data
 
 import androidx.room.*
-import com.example.pdfviewerapp.data.entities.Bookmark
+import com.pdfviewerapp.sunuy.data.entities.Bookmark
 import kotlinx.coroutines.flow.Flow
 
 @Dao

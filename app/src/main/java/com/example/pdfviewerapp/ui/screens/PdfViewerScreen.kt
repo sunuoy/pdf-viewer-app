@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp.ui.screens
+package com.pdfviewerapp.sunuy.ui.screens
 
 import android.content.Context
 import android.content.Intent
@@ -45,15 +45,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.ShareCompat
-import com.example.pdfviewerapp.data.AppDatabase
-import com.example.pdfviewerapp.data.entities.Bookmark
-import com.example.pdfviewerapp.data.entities.RecentPdf
-import com.example.pdfviewerapp.services.PdfTextService
-import com.example.pdfviewerapp.services.SearchMatch
-import com.example.pdfviewerapp.services.TranslationService
-import com.example.pdfviewerapp.services.TtsService
-import com.example.pdfviewerapp.services.TtsState
-import com.example.pdfviewerapp.ui.PdfSessionViewModel
+import com.pdfviewerapp.sunuy.data.AppDatabase
+import com.pdfviewerapp.sunuy.data.entities.Bookmark
+import com.pdfviewerapp.sunuy.data.entities.RecentPdf
+import com.pdfviewerapp.sunuy.services.PdfTextService
+import com.pdfviewerapp.sunuy.services.SearchMatch
+import com.pdfviewerapp.sunuy.services.TranslationService
+import com.pdfviewerapp.sunuy.services.TtsService
+import com.pdfviewerapp.sunuy.services.TtsState
+import com.pdfviewerapp.sunuy.ui.PdfSessionViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.ComponentActivity
 import kotlinx.coroutines.Dispatchers
@@ -119,18 +119,46 @@ fun PdfViewerScreen(
     var searchMatches by remember { mutableStateOf<List<SearchMatch>>(emptyList()) }
     var currentMatchIndex by remember { mutableStateOf(-1) }
     
-    // Bottom Sheet: Translation & TTS Reader Mode
-    var isReaderModeActive by remember { mutableStateOf(false) }
-    var pageTextContent by remember { mutableStateOf("") }
-    var isExtractingText by remember { mutableStateOf(false) }
-    
-    // Translation options
+    // Translation & TTS Mode
+    var isTranslationBarActive by remember { mutableStateOf(false) }
+    val activeTranslations = remember { mutableStateMapOf<Int, String>() }
+    val isTranslatingMap = remember { mutableStateMapOf<Int, Boolean>() }
     var targetLanguageCode by remember { mutableStateOf("es") }
-    var isTranslating by remember { mutableStateOf(false) }
-    var translatedText by remember { mutableStateOf("") }
     
     // TTS State
     val ttsState by ttsService.state.collectAsState()
+    
+    // Helper to translate a page
+    fun translatePage(pageIndex: Int) {
+        if (isTranslatingMap[pageIndex] == true) return
+        isTranslatingMap[pageIndex] = true
+        scope.launch {
+            try {
+                val text = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), pageIndex)
+                if (text.isNotBlank()) {
+                    val translated = translationService.translate(
+                        text = text,
+                        targetLangCode = targetLanguageCode
+                    )
+                    activeTranslations[pageIndex] = translated
+                } else {
+                    activeTranslations[pageIndex] = "No readable text found on this page."
+                }
+            } catch (e: Exception) {
+                Log.e("PdfViewerScreen", "Error translating page $pageIndex", e)
+                activeTranslations[pageIndex] = "Translation failed: ${e.message}"
+            } finally {
+                isTranslatingMap[pageIndex] = false
+            }
+        }
+    }
+    
+    // Auto-translate visible/active page translations when target language changes
+    LaunchedEffect(targetLanguageCode) {
+        activeTranslations.keys.toList().forEach { pageIndex ->
+            translatePage(pageIndex)
+        }
+    }
     
     // Clean up services
     DisposableEffect(Unit) {
@@ -334,16 +362,9 @@ fun PdfViewerScreen(
                             Icon(imageVector = Icons.Default.Search, contentDescription = "Search text")
                         }
                         IconButton(onClick = {
-                            isReaderModeActive = true
-                            isExtractingText = true
-                            translatedText = ""
-                            scope.launch {
-                                pageTextContent = pdfTextService.extractTextFromPage(
-                                    context,
-                                    Uri.parse(pdfPath),
-                                    currentPageIndex
-                                )
-                                isExtractingText = false
+                            isTranslationBarActive = !isTranslationBarActive
+                            if (isTranslationBarActive) {
+                                translatePage(currentPageIndex)
                             }
                         }) {
                             Icon(imageVector = Icons.Default.Translate, contentDescription = "Translate/TTS Pane")
@@ -359,6 +380,290 @@ fun PdfViewerScreen(
                 .padding(padding)
                 .background(if (isDarkThemeInverted) Color(0xFF121212) else Color(0xFFF1F5F9))
         ) {
+            // PDF Pages list
+            if (pdfRenderer != null && pageCount > 0) {
+                val configuration = LocalConfiguration.current
+                val screenWidth = configuration.screenWidthDp.dp
+                
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 16.dp, horizontal = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    itemsIndexed(
+                        items = List(pageCount) { it },
+                        key = { index, _ -> "page_$index" }
+                    ) { index, _ ->
+                        // Load or Render bitmap
+                        var bitmap by remember { mutableStateOf<Bitmap?>(bitmapCache[index]) }
+                        
+                        LaunchedEffect(index) {
+                            if (bitmap == null) {
+                                withContext(Dispatchers.IO) {
+                                    pdfRenderer?.let { renderer ->
+                                        try {
+                                            val bmp = renderPageToBitmap(renderer, index)
+                                            bitmapCache[index] = bmp
+                                            bitmap = bmp
+                                        } catch (e: Exception) {
+                                            Log.e("PdfViewerScreen", "Error rendering page $index", e)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        val pageSize = pageSizes[index] ?: Pair(1, 1)
+                        val aspectRatio = pageSize.first.toFloat() / pageSize.second.toFloat()
+                        
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(aspectRatio)
+                                .padding(horizontal = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isDarkThemeInverted) Color(0xFF1E1E1E) else Color.White
+                            ),
+                            elevation = CardDefaults.cardElevation(2.dp)
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                if (bitmap != null) {
+                                    ZoomableImage(
+                                        bitmap = bitmap!!,
+                                        aspectRatio = aspectRatio,
+                                        isInverted = isDarkThemeInverted,
+                                        colorFilter = if (isDarkThemeInverted) ColorFilter.colorMatrix(darkInvertMatrix) else null,
+                                        searchMatches = searchMatches.filter { it.pageIndex == index },
+                                        pdfPageWidth = pageSize.first.toFloat(),
+                                        pdfPageHeight = pageSize.second.toFloat()
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(strokeWidth = 2.dp)
+                                    }
+                                }
+
+                                val hasTranslation = activeTranslations.containsKey(index)
+                                val isTranslatingPage = isTranslatingMap[index] == true
+                                
+                                if (isTranslatingPage) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.4f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                    }
+                                } else if (hasTranslation && isTranslationBarActive) {
+                                    val translationText = activeTranslations[index] ?: ""
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                if (isDarkThemeInverted) Color(0xED1E1E1E)
+                                                else Color(0xF2F8FAFC)
+                                            )
+                                            .padding(16.dp)
+                                    ) {
+                                        Column(modifier = Modifier.fillMaxSize()) {
+                                            // Control Header
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                val currentLangName = remember(targetLanguageCode) {
+                                                    translationService.supportedLanguages.find { it.code == targetLanguageCode }?.name ?: "Spanish"
+                                                }
+                                                Text(
+                                                    text = "Translation ($currentLangName)",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Row {
+                                                    IconButton(
+                                                        onClick = { ttsService.startSpeaking(translationText) }
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.VolumeUp,
+                                                            contentDescription = "Speak translation",
+                                                            tint = MaterialTheme.colorScheme.primary
+                                                        )
+                                                    }
+                                                    IconButton(
+                                                        onClick = { activeTranslations.remove(index) }
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Close,
+                                                            contentDescription = "Dismiss translation",
+                                                            tint = MaterialTheme.colorScheme.error
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            
+                                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                            
+                                            // Scrollable Translated Text
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .weight(1f)
+                                            ) {
+                                                val transTextValue = remember(translationText) {
+                                                    TextFieldValue(translationText)
+                                                }
+                                                OutlinedTextField(
+                                                    value = transTextValue,
+                                                    onValueChange = {},
+                                                    readOnly = true,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                        fontSize = 15.sp,
+                                                        lineHeight = 22.sp
+                                                    ),
+                                                    colors = TextFieldDefaults.colors(
+                                                        focusedContainerColor = Color.Transparent,
+                                                        unfocusedContainerColor = Color.Transparent,
+                                                        disabledContainerColor = Color.Transparent,
+                                                        focusedIndicatorColor = Color.Transparent,
+                                                        unfocusedIndicatorColor = Color.Transparent
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+
+            // Translation Control Panel Overlay
+            if (isTranslationBarActive) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                        .align(Alignment.TopCenter),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Translate,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Page Translation",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val isCurrentPageTranslating = isTranslatingMap[currentPageIndex] == true
+                            val hasCurrentPageTranslation = activeTranslations.containsKey(currentPageIndex)
+                            
+                            Button(
+                                onClick = { translatePage(currentPageIndex) },
+                                enabled = !isCurrentPageTranslating,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            ) {
+                                if (isCurrentPageTranslating) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                } else {
+                                    Text(if (hasCurrentPageTranslation) "Re-translate" else "Translate Page")
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            var expandedLang by remember { mutableStateOf(false) }
+                            val currentLangName = remember(targetLanguageCode) {
+                                translationService.supportedLanguages.find { it.code == targetLanguageCode }?.name ?: "Spanish"
+                            }
+                            
+                            Box {
+                                Button(
+                                    onClick = { expandedLang = true },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                ) {
+                                    Text(text = currentLangName)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                }
+                                
+                                DropdownMenu(
+                                    expanded = expandedLang,
+                                    onDismissRequest = { expandedLang = false }
+                                ) {
+                                    translationService.supportedLanguages.forEach { lang ->
+                                        DropdownMenuItem(
+                                            text = { Text(lang.name) },
+                                            onClick = {
+                                                targetLanguageCode = lang.code
+                                                expandedLang = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            IconButton(onClick = {
+                                isTranslationBarActive = false
+                            }) {
+                                Icon(Icons.Default.Close, contentDescription = "Close translation bar")
+                            }
+                        }
+                    }
+                }
+            }
+
             // Search Bar overlay
             if (isSearchActive) {
                 Card(
@@ -433,363 +738,10 @@ fun PdfViewerScreen(
                     }
                 }
             }
-
-            // PDF Pages list
-            if (pdfRenderer != null && pageCount > 0) {
-                val configuration = LocalConfiguration.current
-                val screenWidth = configuration.screenWidthDp.dp
-                
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 16.dp, horizontal = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    itemsIndexed(
-                        items = List(pageCount) { it },
-                        key = { index, _ -> "page_$index" }
-                    ) { index, _ ->
-                        // Load or Render bitmap
-                        var bitmap by remember { mutableStateOf<Bitmap?>(bitmapCache[index]) }
-                        
-                        LaunchedEffect(index) {
-                            if (bitmap == null) {
-                                withContext(Dispatchers.IO) {
-                                    pdfRenderer?.let { renderer ->
-                                        try {
-                                            val bmp = renderPageToBitmap(renderer, index)
-                                            bitmapCache[index] = bmp
-                                            bitmap = bmp
-                                        } catch (e: Exception) {
-                                            Log.e("PdfViewerScreen", "Error rendering page $index", e)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        val pageSize = pageSizes[index] ?: Pair(1, 1)
-                        val aspectRatio = pageSize.first.toFloat() / pageSize.second.toFloat()
-                        
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(aspectRatio)
-                                .padding(horizontal = 8.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isDarkThemeInverted) Color(0xFF1E1E1E) else Color.White
-                            ),
-                            elevation = CardDefaults.cardElevation(2.dp)
-                        ) {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                if (bitmap != null) {
-                                    ZoomableImage(
-                                        bitmap = bitmap!!,
-                                        aspectRatio = aspectRatio,
-                                        isInverted = isDarkThemeInverted,
-                                        colorFilter = if (isDarkThemeInverted) ColorFilter.colorMatrix(darkInvertMatrix) else null,
-                                        searchMatches = searchMatches.filter { it.pageIndex == index },
-                                        pdfPageWidth = pageSize.first.toFloat(),
-                                        pdfPageHeight = pageSize.second.toFloat()
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator(strokeWidth = 2.dp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
         }
     }
     
-    // Translation and TTS Drawer / Bottom Sheet
-    if (isReaderModeActive) {
-        ModalBottomSheet(
-            onDismissRequest = {
-                isReaderModeActive = false
-                ttsService.stop()
-            },
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            containerColor = MaterialTheme.colorScheme.surface,
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 600.dp)
-                    .padding(20.dp)
-                    .navigationBarsPadding()
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Reader Mode (Page ${currentPageIndex + 1})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    
-                    // TTS Controller Panel
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = {
-                                when (ttsState) {
-                                    TtsState.IDLE -> ttsService.startSpeaking(pageTextContent)
-                                    TtsState.SPEAKING -> ttsService.pause()
-                                    TtsState.PAUSED -> ttsService.resume()
-                                }
-                            },
-                            enabled = pageTextContent.isNotBlank() && !isExtractingText
-                        ) {
-                            Icon(
-                                imageVector = when (ttsState) {
-                                    TtsState.SPEAKING -> Icons.Default.Pause
-                                    else -> Icons.Default.PlayArrow
-                                },
-                                contentDescription = "Play/Pause TTS",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        if (ttsState != TtsState.IDLE) {
-                            IconButton(onClick = { ttsService.stop() }) {
-                                Icon(
-                                    imageVector = Icons.Default.Stop,
-                                    contentDescription = "Stop TTS",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Target Translation Selection
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Translate Page to:",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    
-                    var expandedLang by remember { mutableStateOf(false) }
-                    val currentLangName = remember(targetLanguageCode) {
-                        translationService.supportedLanguages.find { it.code == targetLanguageCode }?.name ?: "Spanish"
-                    }
-                    
-                    Box {
-                        Button(
-                            onClick = { expandedLang = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        ) {
-                            Text(text = currentLangName)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
-                        }
-                        
-                        DropdownMenu(
-                            expanded = expandedLang,
-                            onDismissRequest = { expandedLang = false }
-                        ) {
-                            translationService.supportedLanguages.forEach { lang ->
-                                DropdownMenuItem(
-                                    text = { Text(lang.name) },
-                                    onClick = {
-                                        targetLanguageCode = lang.code
-                                        expandedLang = false
-                                        // Auto-translate if text already loaded
-                                        if (pageTextContent.isNotBlank()) {
-                                            isTranslating = true
-                                            scope.launch {
-                                                translatedText = translationService.translate(
-                                                    text = pageTextContent,
-                                                    targetLangCode = targetLanguageCode
-                                                )
-                                                isTranslating = false
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                // Content Areas
-                if (isExtractingText) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    ) {
-                        // Left / Source Column
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                            )
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(12.dp)
-                            ) {
-                                // Make selectable via TextField (read only)
-                                val textValue = remember(pageTextContent) {
-                                    TextFieldValue(pageTextContent)
-                                }
-                                OutlinedTextField(
-                                    value = textValue,
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    modifier = Modifier.fillMaxSize(),
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                                    colors = TextFieldDefaults.colors(
-                                        focusedContainerColor = Color.Transparent,
-                                        unfocusedContainerColor = Color.Transparent,
-                                        disabledContainerColor = Color.Transparent,
-                                        focusedIndicatorColor = Color.Transparent,
-                                        unfocusedIndicatorColor = Color.Transparent
-                                    )
-                                )
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.width(12.dp))
-                        
-                        // Right / Translated Column
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-                            )
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(12.dp)
-                            ) {
-                                if (isTranslating) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.align(Alignment.Center)
-                                    )
-                                } else if (translatedText.isNotBlank()) {
-                                    Column(modifier = Modifier.fillMaxSize()) {
-                                        // Header inside translation
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "Translation",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            IconButton(
-                                                onClick = { ttsService.startSpeaking(translatedText) },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.VolumeUp,
-                                                    contentDescription = "Speak translation",
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        
-                                        val transTextValue = remember(translatedText) {
-                                            TextFieldValue(translatedText)
-                                        }
-                                        OutlinedTextField(
-                                            value = transTextValue,
-                                            onValueChange = {},
-                                            readOnly = true,
-                                            modifier = Modifier.fillMaxSize(),
-                                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                                            colors = TextFieldDefaults.colors(
-                                                focusedContainerColor = Color.Transparent,
-                                                unfocusedContainerColor = Color.Transparent,
-                                                disabledContainerColor = Color.Transparent,
-                                                focusedIndicatorColor = Color.Transparent,
-                                                unfocusedIndicatorColor = Color.Transparent
-                                            )
-                                        )
-                                    }
-                                } else {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Button(
-                                            onClick = {
-                                                isTranslating = true
-                                                scope.launch {
-                                                    translatedText = translationService.translate(
-                                                        text = pageTextContent,
-                                                        targetLangCode = targetLanguageCode
-                                                    )
-                                                    isTranslating = false
-                                                }
-                                            },
-                                            enabled = pageTextContent.isNotBlank()
-                                        ) {
-                                            Text("Translate Now")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+
 }
 
 /**
