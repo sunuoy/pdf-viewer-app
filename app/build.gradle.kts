@@ -13,8 +13,8 @@ android {
         applicationId = "com.pdfviewerapp.sunuy"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "2.0.0"
+        versionCode = 3
+        versionName = "3.0.0"
     }
 
     buildTypes {
@@ -76,6 +76,11 @@ dependencies {
 
   // Google ML Kit (for translation)
   implementation("com.google.mlkit:translate:17.0.3")
+
+  // Image Loading & Markdown/HTML Parsing
+  implementation("io.coil-kt:coil-compose:2.6.0")
+  implementation("io.noties.markwon:core:4.6.2")
+  implementation("org.jsoup:jsoup:1.17.2")
 
   // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)

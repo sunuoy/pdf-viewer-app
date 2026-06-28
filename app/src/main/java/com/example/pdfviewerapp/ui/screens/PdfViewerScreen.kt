@@ -14,6 +14,8 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -90,6 +92,8 @@ fun PdfViewerScreen(
     var parcelFileDescriptor by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
     var pageCount by remember { mutableStateOf(0) }
     var documentName by remember { mutableStateOf("Document") }
+    var isTextDocument by remember { mutableStateOf(false) }
+    var textDocumentContent by remember { mutableStateOf<String?>(null) }
     
     // Page dimensions cache (pageIndex -> Pair(width, height))
     val pageSizes = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
@@ -183,42 +187,52 @@ fun PdfViewerScreen(
         }
     }
     
-    // Load PDF Document
+    // Load PDF or Text/Markdown Document
     LaunchedEffect(pdfPath) {
         withContext(Dispatchers.IO) {
             try {
                 val uri = Uri.parse(pdfPath)
-                documentName = getFileName(context, uri) ?: "Document.pdf"
+                documentName = getFileName(context, uri) ?: "Document"
+                val lowerName = documentName.lowercase()
                 
-                val pfd = context.contentResolver.openFileDescriptor(uri, "r")
-                if (pfd != null) {
-                    parcelFileDescriptor = pfd
-                    val renderer = PdfRenderer(pfd)
-                    pdfRenderer = renderer
-                    pageCount = renderer.pageCount
-                    
-                    // Pre-fill page sizes
-                    for (i in 0 until renderer.pageCount) {
-                        val page = renderer.openPage(i)
-                        pageSizes[i] = Pair(page.width, page.height)
-                        page.close()
-                    }
-                    
-                    // Initialize PDFBox
-                    PdfTextService.init(context)
-                    
-                    // Restore last read position
-                    val recent = database.recentPdfDao().getRecentPdfByPath(pdfPath)
-                    if (recent != null && recent.lastPage < renderer.pageCount) {
-                        withContext(Dispatchers.Main) {
-                            listState.scrollToItem(recent.lastPage)
+                if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") || lowerName.endsWith(".html") || lowerName.endsWith(".htm")) {
+                    isTextDocument = true
+                    val content = context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.bufferedReader(Charsets.UTF_8).readText()
+                    } ?: ""
+                    textDocumentContent = content
+                    pageCount = 1
+                } else {
+                    val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                    if (pfd != null) {
+                        parcelFileDescriptor = pfd
+                        val renderer = PdfRenderer(pfd)
+                        pdfRenderer = renderer
+                        pageCount = renderer.pageCount
+                        
+                        // Pre-fill page sizes
+                        for (i in 0 until renderer.pageCount) {
+                            val page = renderer.openPage(i)
+                            pageSizes[i] = Pair(page.width, page.height)
+                            page.close()
+                        }
+                        
+                        // Initialize PDFBox
+                        PdfTextService.init(context)
+                        
+                        // Restore last read position
+                        val recent = database.recentPdfDao().getRecentPdfByPath(pdfPath)
+                        if (recent != null && recent.lastPage < renderer.pageCount) {
+                            withContext(Dispatchers.Main) {
+                                listState.scrollToItem(recent.lastPage)
+                            }
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.e("PdfViewerScreen", "Error loading PDF", e)
+                Log.e("PdfViewerScreen", "Error loading document", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Failed to load PDF file", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Failed to load document file", Toast.LENGTH_LONG).show()
                     onBack()
                 }
             }
@@ -380,8 +394,38 @@ fun PdfViewerScreen(
                 .padding(padding)
                 .background(if (isDarkThemeInverted) Color(0xFF121212) else Color(0xFFF1F5F9))
         ) {
-            // PDF Pages list
-            if (pdfRenderer != null && pageCount > 0) {
+            // Pages list or Text document display
+            if (isTextDocument && textDocumentContent != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDarkThemeInverted) Color(0xFF1E1E1E) else Color.White
+                    ),
+                    elevation = CardDefaults.cardElevation(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(20.dp)
+                    ) {
+                        val scrollState = androidx.compose.foundation.rememberScrollState()
+                        Text(
+                            text = textDocumentContent!!,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(scrollState),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                lineHeight = 24.sp
+                            ),
+                            color = if (isDarkThemeInverted) Color.White else Color(0xFF1E293B)
+                        )
+                    }
+                }
+            } else if (pdfRenderer != null && pageCount > 0) {
                 val configuration = LocalConfiguration.current
                 val screenWidth = configuration.screenWidthDp.dp
                 

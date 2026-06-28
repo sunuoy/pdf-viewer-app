@@ -431,7 +431,7 @@ fun HomeScreen(
             ) {
                 // Pick File card
                 Card(
-                    onClick = { filePickerLauncher.launch(arrayOf("application/pdf")) },
+                    onClick = { filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "text/markdown", "text/html", "text/*")) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(130.dp)
