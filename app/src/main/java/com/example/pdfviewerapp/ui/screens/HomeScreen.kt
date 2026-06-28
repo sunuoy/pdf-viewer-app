@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -93,6 +94,9 @@ fun HomeScreen(
     var mergedFileUri by remember { mutableStateOf<Uri?>(null) }
     var isMenuExpanded by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var autoSaveLocationPrompt by remember { mutableStateOf(true) }
+    var highResRendering by remember { mutableStateOf(true) }
     
     // Initialize PDFBox and text service safely
     val pdfTextService = remember {
@@ -427,6 +431,14 @@ fun HomeScreen(
                                     filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "text/markdown", "text/html", "text/*"))
                                 },
                                 leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Settings") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    showSettingsDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
@@ -820,7 +832,7 @@ fun HomeScreen(
             text = {
                 Column {
                     Text(
-                        text = "Version 3.0.1",
+                        text = "Version 3.0.2",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleMedium
@@ -838,6 +850,56 @@ fun HomeScreen(
             confirmButton = {
                 Button(onClick = { showAboutDialog = false }) {
                     Text("Close")
+                }
+            }
+        )
+    }
+
+    // Settings Dialog
+    if (showSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            title = { Text("App Settings") },
+            text = {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Always Prompt Save Location", fontWeight = FontWeight.SemiBold)
+                            Text("Ask destination for converted files", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                        }
+                        Switch(
+                            checked = autoSaveLocationPrompt,
+                            onCheckedChange = { autoSaveLocationPrompt = it }
+                        )
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("High Quality Page Rendering", fontWeight = FontWeight.SemiBold)
+                            Text("Render 2x resolution page bitmaps", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                        }
+                        Switch(
+                            checked = highResRendering,
+                            onCheckedChange = { highResRendering = it }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showSettingsDialog = false }) {
+                    Text("Done")
                 }
             }
         )
