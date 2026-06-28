@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -58,7 +59,9 @@ import com.pdfviewerapp.sunuy.services.TtsState
 import com.pdfviewerapp.sunuy.ui.PdfSessionViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.ComponentActivity
+import com.pdfviewerapp.sunuy.services.AutoScrollMode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -131,6 +134,12 @@ fun PdfViewerScreen(
     
     // TTS State
     val ttsState by ttsService.state.collectAsState()
+    
+    // Moon+ Reader Auto-Scroll State
+    var isAutoScrollActive by remember { mutableStateOf(false) }
+    var autoScrollMode by remember { mutableStateOf(AutoScrollMode.BY_PIXEL) }
+    var autoScrollSpeed by remember { mutableStateOf(1.0f) } // 0.5x to 5.0x
+    var rollingBlindY by remember { mutableStateOf(0f) }
     
     // Helper to translate a page
     fun translatePage(pageIndex: Int) {
@@ -275,6 +284,36 @@ fun PdfViewerScreen(
         }
     }
     
+    // Moon+ Reader Auto-Scroll Execution Loop
+    LaunchedEffect(isAutoScrollActive, autoScrollMode, autoScrollSpeed) {
+        if (!isAutoScrollActive) return@LaunchedEffect
+        
+        while (isAutoScrollActive) {
+            when (autoScrollMode) {
+                AutoScrollMode.BY_PIXEL -> {
+                    val scrollAmount = (4f * autoScrollSpeed).toInt().coerceAtLeast(1)
+                    listState.scrollBy(scrollAmount.toFloat())
+                    delay(16L)
+                }
+                AutoScrollMode.BY_LINE -> {
+                    val scrollAmount = (40f * autoScrollSpeed).toInt()
+                    listState.scrollBy(scrollAmount.toFloat())
+                    delay(1200L / autoScrollSpeed.toLong())
+                }
+                AutoScrollMode.BY_PAGE -> {
+                    delay((4000L / autoScrollSpeed).toLong())
+                    if (currentPageIndex < pageCount - 1) {
+                        listState.animateScrollToItem(currentPageIndex + 1)
+                    }
+                }
+                AutoScrollMode.ROLLING_BLIND -> {
+                    rollingBlindY = (rollingBlindY + (3f * autoScrollSpeed)) % 800f
+                    delay(16L)
+                }
+            }
+        }
+    }
+    
     // Dark mode color matrix filter
     val darkInvertMatrix = remember {
         ColorMatrix(floatArrayOf(
@@ -365,8 +404,15 @@ fun PdfViewerScreen(
                         )
                     }
                     
-                    // Reader / Translator Pane Toggle
+                    // Reader / Translator Pane / Auto-Scroll Toggle
                     Row {
+                        IconButton(onClick = { isAutoScrollActive = !isAutoScrollActive }) {
+                            Icon(
+                                imageVector = if (isAutoScrollActive) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
+                                contentDescription = "Auto Scroll",
+                                tint = if (isAutoScrollActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         IconButton(onClick = {
                             isSearchActive = !isSearchActive
                             if (!isSearchActive) {
@@ -778,6 +824,89 @@ fun PdfViewerScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Moon+ Reader Rolling Blind Overlay
+            if (isAutoScrollActive && autoScrollMode == AutoScrollMode.ROLLING_BLIND) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val lineY = rollingBlindY % size.height
+                    drawLine(
+                        color = Color(0xAA00E5FF),
+                        start = Offset(0f, lineY),
+                        end = Offset(size.width, lineY),
+                        strokeWidth = 6f
+                    )
+                    drawRect(
+                        color = Color(0x3300E5FF),
+                        topLeft = Offset(0f, lineY - 20f),
+                        size = Size(size.width, 40f)
+                    )
+                }
+            }
+
+            // Moon+ Reader Speed & Mode Floating Control HUD
+            if (isAutoScrollActive) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+                    tonalElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        var expandedModeMenu by remember { mutableStateOf(false) }
+                        
+                        Box {
+                            TextButton(onClick = { expandedModeMenu = true }) {
+                                Text(autoScrollMode.displayName, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            }
+                            DropdownMenu(
+                                expanded = expandedModeMenu,
+                                onDismissRequest = { expandedModeMenu = false }
+                            ) {
+                                AutoScrollMode.values().forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = { Text(mode.displayName) },
+                                        onClick = {
+                                            autoScrollMode = mode
+                                            expandedModeMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        
+                        VerticalDivider(modifier = Modifier.height(24.dp))
+                        
+                        IconButton(
+                            onClick = { autoScrollSpeed = (autoScrollSpeed - 0.25f).coerceAtLeast(0.5f) }
+                        ) {
+                            Icon(Icons.Default.Remove, contentDescription = "Slower")
+                        }
+                        
+                        Text(
+                            text = String.format("%.2fx", autoScrollSpeed),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        
+                        IconButton(
+                            onClick = { autoScrollSpeed = (autoScrollSpeed + 0.25f).coerceAtMost(5.0f) }
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Faster")
+                        }
+                        
+                        IconButton(onClick = { isAutoScrollActive = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close HUD", tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
