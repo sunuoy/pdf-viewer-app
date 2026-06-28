@@ -101,10 +101,12 @@ fun HomeScreen(
     var autoSaveLocationPrompt by remember { mutableStateOf(true) }
     var highResRendering by remember { mutableStateOf(true) }
     
-    // Initialize PDFBox and text service safely
-    val pdfTextService = remember {
-        PdfTextService.init(context)
-        PdfTextService()
+    // Initialize PDFBox asynchronously to optimize cold startup speed
+    val pdfTextService = remember { PdfTextService() }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            PdfTextService.init(context)
+        }
     }
     
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -847,7 +849,7 @@ fun HomeScreen(
             text = {
                 Column {
                     Text(
-                        text = "Version 6.0.1",
+                        text = "Version 6.0.2",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleMedium
