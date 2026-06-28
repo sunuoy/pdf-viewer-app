@@ -86,6 +86,7 @@ fun PdfViewerScreen(
     val pdfTextService = remember { PdfTextService() }
     val translationService = remember { TranslationService() }
     val ttsService = remember { TtsService(context) }
+    val bookSpeechManager = remember { com.pdfviewerapp.sunuy.services.BookSpeechManager(context) }
     
     // Database
     val database = remember { AppDatabase.getDatabase(context) }
@@ -177,6 +178,7 @@ fun PdfViewerScreen(
     DisposableEffect(Unit) {
         onDispose {
             ttsService.shutdown()
+            bookSpeechManager.release()
             translationService.closeActiveTranslator()
             try {
                 pdfRenderer?.close()
