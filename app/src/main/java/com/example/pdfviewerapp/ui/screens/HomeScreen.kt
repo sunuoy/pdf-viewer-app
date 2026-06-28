@@ -849,7 +849,7 @@ fun HomeScreen(
             text = {
                 Column {
                     Text(
-                        text = "Version 6.0.2",
+                        text = "Version 6.0.3",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleMedium
