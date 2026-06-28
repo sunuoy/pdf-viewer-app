@@ -450,6 +450,22 @@ fun HomeScreen(
                                 },
                                 leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
                             )
+                            DropdownMenuItem(
+                                text = { Text("Google Drive Sync") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    com.pdfviewerapp.sunuy.services.GoogleDriveManager.startSignIn(context)
+                                },
+                                leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("OneDrive Cloud Sync") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    com.pdfviewerapp.sunuy.services.OneDriveManager.startSignIn(context)
+                                },
+                                leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
+                            )
 
                             HorizontalDivider()
                             DropdownMenuItem(
