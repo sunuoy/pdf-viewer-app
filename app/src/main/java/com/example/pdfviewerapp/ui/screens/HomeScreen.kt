@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -425,14 +427,6 @@ fun HomeScreen(
                             onDismissRequest = { isMenuExpanded = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Open File") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "text/markdown", "text/html", "text/*"))
-                                },
-                                leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
                                 text = { Text("Settings") },
                                 onClick = {
                                     isMenuExpanded = false
@@ -440,7 +434,6 @@ fun HomeScreen(
                                 },
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
                             )
-                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("About & Version") },
                                 onClick = {
@@ -448,6 +441,15 @@ fun HomeScreen(
                                     showAboutDialog = true
                                 },
                                 leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Exit") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    (context as? android.app.Activity)?.finish()
+                                },
+                                leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                             )
                         }
                     }
@@ -832,7 +834,7 @@ fun HomeScreen(
             text = {
                 Column {
                     Text(
-                        text = "Version 3.0.2",
+                        text = "Version 3.0.3",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleMedium
@@ -840,6 +842,22 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("A high-performance offline PDF & multi-format document workspace for Android built with Jetpack Compose, Coroutines, Room Database, and Storage Access Framework.")
                     Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sunuoy/pdf-viewer-app/releases"))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Cannot open browser link", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Check for Updates on GitHub")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Developed with ❤️ for seamless document viewing.",
                         style = MaterialTheme.typography.bodySmall,
