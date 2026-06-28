@@ -74,6 +74,7 @@ import java.util.zip.ZipOutputStream
 @Composable
 fun HomeScreen(
     onPdfSelected: (String) -> Unit,
+    onNavigateToSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -433,7 +434,7 @@ fun HomeScreen(
                                 text = { Text("Settings") },
                                 onClick = {
                                     isMenuExpanded = false
-                                    showSettingsDialog = true
+                                    onNavigateToSettings()
                                 },
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
                             )
