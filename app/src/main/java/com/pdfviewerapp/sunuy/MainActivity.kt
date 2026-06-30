@@ -19,10 +19,14 @@ import androidx.navigation3.runtime.NavKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    // Clear cache asynchronously on startup to clean up leftover files
+    clearCacheAsync()
 
     enableEdgeToEdge()
 
@@ -52,6 +56,32 @@ class MainActivity : ComponentActivity() {
             MainNavigation()
           }
         } 
+      }
+    }
+  }
+
+  override fun onDestroy() {
+    super.onDestroy()
+    if (isFinishing) {
+      clearCacheAsync()
+    }
+  }
+
+  private fun clearCacheAsync() {
+    CoroutineScope(Dispatchers.IO).launch {
+      try {
+        cacheDir.deleteContents()
+        externalCacheDir?.deleteContents()
+      } catch (e: Exception) {
+        // Ignore
+      }
+    }
+  }
+
+  private fun File.deleteContents() {
+    if (isDirectory) {
+      listFiles()?.forEach { file ->
+        file.deleteRecursively()
       }
     }
   }

@@ -27,6 +27,10 @@ class TtsService(context: Context) : TextToSpeech.OnInitListener {
     private val _state = MutableStateFlow(TtsState.IDLE)
     val state: StateFlow<TtsState> = _state
 
+    private var currentSpeed = 1.0f
+    private var currentPitch = 1.0f
+    private var currentLanguage = Locale.getDefault().toLanguageTag()
+    
     private var fullText: String = ""
     private var sentences = listOf<String>()
     private var currentSentenceIndex = 0
@@ -37,12 +41,10 @@ class TtsService(context: Context) : TextToSpeech.OnInitListener {
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale.getDefault())
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                Log.e(TAG, "Default language is not supported or missing data")
-                tts?.setLanguage(Locale.US)
-            }
             isInitialized = true
+            tts?.setSpeechRate(currentSpeed)
+            tts?.setPitch(currentPitch)
+            setLanguage(currentLanguage)
             setupUtteranceListener()
         } else {
             Log.e(TAG, "Initialization of TextToSpeech failed")
@@ -140,6 +142,40 @@ class TtsService(context: Context) : TextToSpeech.OnInitListener {
         currentSentenceIndex = 0
         sentences = emptyList()
         fullText = ""
+    }
+
+    /**
+     * Set speed of TTS speaking voice.
+     */
+    fun setSpeed(speed: Float) {
+        currentSpeed = speed
+        if (isInitialized) {
+            tts?.setSpeechRate(speed)
+        }
+    }
+
+    /**
+     * Set pitch of TTS speaking voice.
+     */
+    fun setPitch(pitch: Float) {
+        currentPitch = pitch
+        if (isInitialized) {
+            tts?.setPitch(pitch)
+        }
+    }
+
+    /**
+     * Set language locale of TTS speaking voice.
+     */
+    fun setLanguage(languageCode: String) {
+        currentLanguage = languageCode
+        if (isInitialized) {
+            val locale = Locale.forLanguageTag(languageCode)
+            val result = tts?.setLanguage(locale)
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.e(TAG, "Language $languageCode is not supported or missing data")
+            }
+        }
     }
 
     /**

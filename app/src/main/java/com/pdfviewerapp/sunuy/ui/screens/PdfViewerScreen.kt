@@ -160,6 +160,8 @@ fun PdfViewerScreen(
     
     // TTS State
     val ttsState by ttsService.state.collectAsState()
+    var currentTtsSpeed by remember { mutableStateOf(1.0f) }
+    var currentTtsPitch by remember { mutableStateOf(1.0f) }
     
     // Moon+ Reader Auto-Scroll State
     var isAutoScrollActive by remember { mutableStateOf(false) }
@@ -194,6 +196,7 @@ fun PdfViewerScreen(
     
     // Auto-translate visible/active page translations when target language changes
     LaunchedEffect(targetLanguageCode) {
+        ttsService.setLanguage(targetLanguageCode)
         activeTranslations.keys.toList().forEach { pageIndex ->
             translatePage(pageIndex)
         }
@@ -685,6 +688,77 @@ fun PdfViewerScreen(
                                             
                                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                             
+                                            // TTS Speed & Pitch controls
+                                            Column(
+                                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "Speed:",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
+                                                        val isSelected = currentTtsSpeed == speed
+                                                        val speedLabel = if (speed == 1.0f) "Normal" else "${speed}x"
+                                                        FilterChip(
+                                                            selected = isSelected,
+                                                            onClick = {
+                                                                currentTtsSpeed = speed
+                                                                ttsService.setSpeed(speed)
+                                                            },
+                                                            label = { Text(speedLabel, fontSize = 11.sp) },
+                                                            colors = FilterChipDefaults.filterChipColors(
+                                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                            ),
+                                                            modifier = Modifier.height(28.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "Pitch:",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    listOf(0.8f, 1.0f, 1.2f).forEach { pitch ->
+                                                        val isSelected = currentTtsPitch == pitch
+                                                        val pitchLabel = when (pitch) {
+                                                            0.8f -> "Low"
+                                                            1.0f -> "Normal"
+                                                            else -> "High"
+                                                        }
+                                                        FilterChip(
+                                                            selected = isSelected,
+                                                            onClick = {
+                                                                currentTtsPitch = pitch
+                                                                ttsService.setPitch(pitch)
+                                                            },
+                                                            label = { Text(pitchLabel, fontSize = 11.sp) },
+                                                            colors = FilterChipDefaults.filterChipColors(
+                                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                            ),
+                                                            modifier = Modifier.height(28.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            
+                                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                            
                                             // Scrollable Translated Text
                                             Box(
                                                 modifier = Modifier
@@ -739,31 +813,43 @@ fun PdfViewerScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(8.dp)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(12.dp)
                     ) {
+                        // Title Row
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Translate,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Page Translation",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Translate,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Page Translation",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            IconButton(onClick = { isTranslationBarActive = false }) {
+                                Icon(Icons.Default.Close, contentDescription = "Close translation bar")
+                            }
                         }
                         
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Actions Row
                         Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val isCurrentPageTranslating = isTranslatingMap[currentPageIndex] == true
@@ -772,6 +858,7 @@ fun PdfViewerScreen(
                             Button(
                                 onClick = { translatePage(currentPageIndex) },
                                 enabled = !isCurrentPageTranslating,
+                                modifier = Modifier.weight(1f),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -784,26 +871,34 @@ fun PdfViewerScreen(
                                         color = MaterialTheme.colorScheme.onSecondaryContainer
                                     )
                                 } else {
-                                    Text(if (hasCurrentPageTranslation) "Re-translate" else "Translate Page")
+                                    Text(
+                                        text = if (hasCurrentPageTranslation) "Re-translate" else "Translate Page",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
-                            
-                            Spacer(modifier = Modifier.width(8.dp))
                             
                             var expandedLang by remember { mutableStateOf(false) }
                             val currentLangName = remember(targetLanguageCode) {
                                 translationService.supportedLanguages.find { it.code == targetLanguageCode }?.name ?: "Spanish"
                             }
                             
-                            Box {
+                            Box(modifier = Modifier.weight(1f)) {
                                 Button(
                                     onClick = { expandedLang = true },
+                                    modifier = Modifier.fillMaxWidth(),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 ) {
-                                    Text(text = currentLangName)
+                                    Text(
+                                        text = currentLangName,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                                 }
@@ -822,14 +917,6 @@ fun PdfViewerScreen(
                                         )
                                     }
                                 }
-                            }
-                            
-                            Spacer(modifier = Modifier.width(8.dp))
-                            
-                            IconButton(onClick = {
-                                isTranslationBarActive = false
-                            }) {
-                                Icon(Icons.Default.Close, contentDescription = "Close translation bar")
                             }
                         }
                     }
