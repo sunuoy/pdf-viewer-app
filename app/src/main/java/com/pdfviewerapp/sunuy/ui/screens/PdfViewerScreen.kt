@@ -19,6 +19,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateRotation
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.positionChanged
+import kotlin.math.abs
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -109,7 +119,7 @@ fun PdfViewerScreen(
     
     // Bounded bitmaps cache (evicts and recycles when full to prevent OOM)
     val bitmapCache = remember {
-        object : LruCache<Int, Bitmap>(6) {
+        object : LruCache<Int, Bitmap>(8) {
             override fun entryRemoved(evicted: Boolean, key: Int?, oldValue: Bitmap?, newValue: Bitmap?) {
                 if (evicted && oldValue != null && !oldValue.isRecycled) {
                     oldValue.recycle()
@@ -605,17 +615,64 @@ fun PdfViewerScreen(
                                                     color = MaterialTheme.colorScheme.primary
                                                 )
                                                 Row {
-                                                    IconButton(
-                                                        onClick = { ttsService.startSpeaking(translationText) }
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.VolumeUp,
-                                                            contentDescription = "Speak translation",
-                                                            tint = MaterialTheme.colorScheme.primary
-                                                        )
+                                                    when (ttsState) {
+                                                        TtsState.SPEAKING -> {
+                                                            IconButton(
+                                                                onClick = { ttsService.pause() }
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Pause,
+                                                                    contentDescription = "Pause speaking",
+                                                                    tint = MaterialTheme.colorScheme.primary
+                                                                )
+                                                            }
+                                                            IconButton(
+                                                                onClick = { ttsService.stop() }
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Stop,
+                                                                    contentDescription = "Stop speaking",
+                                                                    tint = MaterialTheme.colorScheme.error
+                                                                )
+                                                            }
+                                                        }
+                                                        TtsState.PAUSED -> {
+                                                            IconButton(
+                                                                onClick = { ttsService.resume() }
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.PlayArrow,
+                                                                    contentDescription = "Resume speaking",
+                                                                    tint = MaterialTheme.colorScheme.primary
+                                                                )
+                                                            }
+                                                            IconButton(
+                                                                onClick = { ttsService.stop() }
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Stop,
+                                                                    contentDescription = "Stop speaking",
+                                                                    tint = MaterialTheme.colorScheme.error
+                                                                )
+                                                            }
+                                                        }
+                                                        TtsState.IDLE -> {
+                                                            IconButton(
+                                                                onClick = { ttsService.startSpeaking(translationText) }
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.VolumeUp,
+                                                                    contentDescription = "Speak translation",
+                                                                    tint = MaterialTheme.colorScheme.primary
+                                                                )
+                                                            }
+                                                        }
                                                     }
                                                     IconButton(
-                                                        onClick = { activeTranslations.remove(index) }
+                                                        onClick = {
+                                                            ttsService.stop()
+                                                            activeTranslations.remove(index)
+                                                        }
                                                     ) {
                                                         Icon(
                                                             imageVector = Icons.Default.Close,
@@ -943,6 +1000,75 @@ fun PdfViewerScreen(
 }
 
 /**
+ * Custom detectTransformGestures that conditionally consumes gestures.
+ * Specifically, it does NOT consume touch/drag events if:
+ * 1. The image is not zoomed in (isZoomed() is false).
+ * 2. It is a single finger touch/drag gesture.
+ * This allows single finger scrolling of parent LazyColumn while retaining pinch-to-zoom capability.
+ */
+suspend fun PointerInputScope.detectZoomableTransformGestures(
+    isZoomed: () -> Boolean,
+    onGesture: (centroid: Offset, pan: Offset, zoom: Float, rotation: Float) -> Unit
+) {
+    awaitEachGesture {
+        var rotation = 0f
+        var zoom = 1f
+        var pan = Offset.Zero
+        var pastTouchSlop = isZoomed()
+        val touchSlop = viewConfiguration.touchSlop
+
+        awaitFirstDown(requireUnconsumed = false)
+        do {
+            val event = awaitPointerEvent()
+            val canceled = event.changes.any { it.isConsumed }
+            if (!canceled) {
+                val zoomChange = event.calculateZoom()
+                val rotationChange = event.calculateRotation()
+                val panChange = event.calculatePan()
+
+                if (!pastTouchSlop) {
+                    zoom *= zoomChange
+                    rotation += rotationChange
+                    pan += panChange
+
+                    val centroidSize = event.calculateCentroidSize(useCurrent = false)
+                    val zoomMotion = abs(1 - zoom) * centroidSize
+                    val rotationMotion = abs(rotation * minOf(size.width, size.height) / 180f)
+                    val panMotion = pan.getDistance()
+
+                    if (zoomMotion > touchSlop ||
+                        rotationMotion > touchSlop ||
+                        panMotion > touchSlop
+                    ) {
+                        pastTouchSlop = true
+                    }
+                }
+
+                if (pastTouchSlop) {
+                    val centroid = event.calculateCentroid(useCurrent = false)
+                    if (rotationChange != 0f ||
+                        zoomChange != 1f ||
+                        panChange != Offset.Zero
+                    ) {
+                        onGesture(centroid, panChange, zoomChange, rotationChange)
+                    }
+                    
+                    // Consume changes if zoomed in or multi-touch
+                    val shouldConsume = isZoomed() || event.changes.size > 1
+                    if (shouldConsume) {
+                        event.changes.forEach {
+                            if (it.positionChanged()) {
+                                it.consume()
+                            }
+                        }
+                    }
+                }
+            }
+        } while (!canceled && event.changes.any { it.pressed })
+    }
+}
+
+/**
  * Zoomable container displaying page bitmap and overlay search highlights.
  */
 @Composable
@@ -975,7 +1101,9 @@ fun ZoomableImage(
                 )
             }
             .pointerInput(Unit) {
-                detectTransformGestures { centroid, pan, zoom, _ ->
+                detectZoomableTransformGestures(
+                    isZoomed = { scale > 1.05f }
+                ) { centroid, pan, zoom, _ ->
                     val newScale = (scale * zoom).coerceIn(1f, 6f)
                     if (newScale > 1f) {
                         offset += pan

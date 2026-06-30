@@ -1,4 +1,4 @@
-package com.example.pdfviewerapp.ui.main
+package com.pdfviewerapp.sunuy.ui.main
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -7,7 +7,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
-/** UI tests for [com.example.pdfviewerapp.ui.main.MainScreen]. */
+/** UI tests for [com.pdfviewerapp.sunuy.ui.main.MainScreen]. */
 class MainScreenTest {
 
   @get:Rule val composeTestRule = createAndroidComposeRule<ComponentActivity>()

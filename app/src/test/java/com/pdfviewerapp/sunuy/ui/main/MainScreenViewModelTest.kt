@@ -1,6 +1,6 @@
-package com.example.pdfviewerapp.ui.main
+package com.pdfviewerapp.sunuy.ui.main
 
-import com.example.pdfviewerapp.data.DataRepository
+import com.pdfviewerapp.sunuy.data.DataRepository
 import junit.framework.TestCase.assertEquals
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
