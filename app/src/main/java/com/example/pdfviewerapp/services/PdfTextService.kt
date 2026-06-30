@@ -11,6 +11,7 @@ import com.tom_roush.pdfbox.text.TextPosition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.InputStream
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 
 data class SearchMatch(
@@ -20,6 +21,8 @@ data class SearchMatch(
 )
 
 class PdfTextService {
+
+    private val textCache = ConcurrentHashMap<String, MutableMap<Int, String>>()
 
     companion object {
         private const val TAG = "PdfTextService"
@@ -37,6 +40,9 @@ class PdfTextService {
      * Extract plain text from a specific page.
      */
     suspend fun extractTextFromPage(context: Context, uri: Uri, pageIndex: Int): String = withContext(Dispatchers.IO) {
+        val uriStr = uri.toString()
+        textCache[uriStr]?.get(pageIndex)?.let { return@withContext it }
+
         var document: PDDocument? = null
         var inputStream: InputStream? = null
         try {
@@ -48,7 +54,10 @@ class PdfTextService {
             val stripper = PDFTextStripper()
             stripper.startPage = pageIndex + 1
             stripper.endPage = pageIndex + 1
-            return@withContext stripper.getText(document) ?: ""
+            val text = stripper.getText(document) ?: ""
+            
+            textCache.getOrPut(uriStr) { ConcurrentHashMap() }[pageIndex] = text
+            return@withContext text
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting text from page $pageIndex", e)
             return@withContext ""
@@ -70,6 +79,7 @@ class PdfTextService {
         val results = mutableListOf<SearchMatch>()
         var document: PDDocument? = null
         var inputStream: InputStream? = null
+        val uriStr = uri.toString()
         
         try {
             inputStream = context.contentResolver.openInputStream(uri)
@@ -139,7 +149,7 @@ class PdfTextService {
                                         if (charRight > maxX) maxX = charRight
                                         if (charBottom > maxY) maxY = charBottom
                                     }
-                                    pageMatchRects.add(RectF(minX, minY, maxX, maxY))
+                                pageMatchRects.add(RectF(minX, minY, maxX, maxY))
                                 }
                             }
                             index += length
@@ -149,6 +159,9 @@ class PdfTextService {
                 
                 // This call triggers writeString for page contents
                 val fullPageText = stripper.getText(document) ?: ""
+                
+                // Cache the extracted page text
+                textCache.getOrPut(uriStr) { ConcurrentHashMap() }[i] = fullPageText
                 
                 if (pageMatchRects.isNotEmpty()) {
                     // Extract snippet context

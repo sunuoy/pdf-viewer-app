@@ -65,6 +65,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import android.util.LruCache
+import androidx.compose.ui.platform.LocalDensity
 import java.io.File
 import java.io.FileOutputStream
 
@@ -87,7 +91,7 @@ fun PdfViewerScreen(
     val pdfTextService = remember { PdfTextService() }
     val translationService = remember { TranslationService() }
     val ttsService = remember { TtsService(context) }
-    val bookSpeechManager = remember { com.pdfviewerapp.sunuy.services.BookSpeechManager(context) }
+    val rendererMutex = remember { Mutex() }
     
     // Database
     val database = remember { AppDatabase.getDatabase(context) }
@@ -103,15 +107,25 @@ fun PdfViewerScreen(
     // Page dimensions cache (pageIndex -> Pair(width, height))
     val pageSizes = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
     
-    // Rendered bitmaps cache
-    val bitmapCache = remember { mutableStateMapOf<Int, Bitmap>() }
+    // Bounded bitmaps cache (evicts and recycles when full to prevent OOM)
+    val bitmapCache = remember {
+        object : LruCache<Int, Bitmap>(6) {
+            override fun entryRemoved(evicted: Boolean, key: Int?, oldValue: Bitmap?, newValue: Bitmap?) {
+                if (evicted && oldValue != null && !oldValue.isRecycled) {
+                    oldValue.recycle()
+                }
+            }
+        }
+    }
     
     // Navigation / Scroll State
     val listState = rememberLazyListState()
-    val visibleItemsInfo = listState.layoutInfo.visibleItemsInfo
-    val currentPageIndex = remember(visibleItemsInfo, pageCount) {
-        if (visibleItemsInfo.isEmpty()) 0
-        else visibleItemsInfo.first().index.coerceIn(0, maxOf(0, pageCount - 1))
+    val currentPageIndex by remember {
+        derivedStateOf {
+            val visibleItems = listState.layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) 0
+            else visibleItems.first().index.coerceIn(0, maxOf(0, pageCount - 1))
+        }
     }
     
     // Bookmarking state
@@ -179,16 +193,8 @@ fun PdfViewerScreen(
     DisposableEffect(Unit) {
         onDispose {
             ttsService.shutdown()
-            bookSpeechManager.release()
             translationService.closeActiveTranslator()
-            bitmapCache.values.forEach {
-                try {
-                    if (!it.isRecycled) it.recycle()
-                } catch (e: Exception) {
-                    // Ignore
-                }
-            }
-            bitmapCache.clear()
+            bitmapCache.evictAll()
             try {
                 pdfRenderer?.close()
                 parcelFileDescriptor?.close()
@@ -230,11 +236,13 @@ fun PdfViewerScreen(
                         pdfRenderer = renderer
                         pageCount = renderer.pageCount
                         
-                        // Pre-fill page sizes
-                        for (i in 0 until renderer.pageCount) {
-                            val page = renderer.openPage(i)
-                            pageSizes[i] = Pair(page.width, page.height)
-                            page.close()
+                        // Pre-fill page sizes under lock
+                        rendererMutex.withLock {
+                            for (i in 0 until renderer.pageCount) {
+                                val page = renderer.openPage(i)
+                                pageSizes[i] = Pair(page.width, page.height)
+                                page.close()
+                            }
                         }
                         
                         // Initialize PDFBox
@@ -259,16 +267,15 @@ fun PdfViewerScreen(
         }
     }
     
-    // Save last page progress to database
+    // Save last page progress to database (debounced to avoid heavy DB writes during active scroll)
     LaunchedEffect(currentPageIndex) {
         if (pageCount > 0) {
-            scope.launch {
-                val existing = database.recentPdfDao().getRecentPdfByPath(pdfPath)
-                if (existing != null) {
-                    database.recentPdfDao().insertRecentPdf(
-                        existing.copy(lastPage = currentPageIndex, lastOpened = System.currentTimeMillis())
-                    )
-                }
+            delay(1000L) // Wait for 1 second of inactivity before saving
+            val existing = database.recentPdfDao().getRecentPdfByPath(pdfPath)
+            if (existing != null) {
+                database.recentPdfDao().insertRecentPdf(
+                    existing.copy(lastPage = currentPageIndex, lastOpened = System.currentTimeMillis())
+                )
             }
         }
     }
@@ -500,15 +507,20 @@ fun PdfViewerScreen(
                         key = { index, _ -> "page_$index" }
                     ) { index, _ ->
                         // Load or Render bitmap
-                        var bitmap by remember { mutableStateOf<Bitmap?>(bitmapCache[index]) }
+                        var bitmap by remember { mutableStateOf<Bitmap?>(bitmapCache.get(index)) }
+                        val density = LocalDensity.current
                         
                         LaunchedEffect(index) {
                             if (bitmap == null) {
                                 withContext(Dispatchers.IO) {
                                     pdfRenderer?.let { renderer ->
                                         try {
-                                            val bmp = renderPageToBitmap(renderer, index)
-                                            bitmapCache[index] = bmp
+                                            val pageSize = pageSizes[index] ?: Pair(1, 1)
+                                            val screenWidthPx = with(density) { screenWidth.toPx() }
+                                            val dynamicScale = (screenWidthPx / pageSize.first.toFloat()).coerceIn(1.5f, 2.5f)
+                                            
+                                            val bmp = renderPageToBitmap(renderer, index, dynamicScale, rendererMutex)
+                                            bitmapCache.put(index, bmp)
                                             bitmap = bmp
                                         } catch (e: Exception) {
                                             Log.e("PdfViewerScreen", "Error rendering page $index", e)
@@ -1024,16 +1036,19 @@ fun ZoomableImage(
 suspend fun renderPageToBitmap(
     renderer: PdfRenderer,
     pageIndex: Int,
-    scale: Float = 2.5f // Set high scale for clear reading text quality
+    scale: Float,
+    mutex: Mutex
 ): Bitmap = withContext(Dispatchers.IO) {
-    val page = renderer.openPage(pageIndex)
-    val width = (page.width * scale).toInt()
-    val height = (page.height * scale).toInt()
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    bitmap.eraseColor(android.graphics.Color.WHITE)
-    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-    page.close()
-    bitmap
+    mutex.withLock {
+        val page = renderer.openPage(pageIndex)
+        val width = (page.width * scale).toInt()
+        val height = (page.height * scale).toInt()
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.WHITE)
+        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+        page.close()
+        bitmap
+    }
 }
 
 /**
