@@ -6,11 +6,13 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.pdfviewerapp.sunuy.data.entities.Bookmark
 import com.pdfviewerapp.sunuy.data.entities.RecentPdf
+import com.pdfviewerapp.sunuy.data.entities.HighlightAnnotation
 
-@Database(entities = [RecentPdf::class, Bookmark::class], version = 1, exportSchema = false)
+@Database(entities = [RecentPdf::class, Bookmark::class, HighlightAnnotation::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun recentPdfDao(): RecentPdfDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun highlightDao(): HighlightDao
 
     companion object {
         @Volatile
@@ -22,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "pdf_viewer_database"
-                ).build()
+                ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 instance
             }

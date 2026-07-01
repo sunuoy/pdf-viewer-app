@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,6 +28,9 @@ class MainActivity : ComponentActivity() {
 
     // Clear cache asynchronously on startup to clean up leftover files
     clearCacheAsync()
+
+    // Copy assets to filesDir on update/new install
+    copyAssetsToFilesOnUpdate()
 
     enableEdgeToEdge()
 
@@ -64,6 +68,44 @@ class MainActivity : ComponentActivity() {
     super.onDestroy()
     if (isFinishing) {
       clearCacheAsync()
+    }
+  }
+
+  private fun copyAssetsToFilesOnUpdate() {
+    val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+    val currentVersionCode = try {
+      val pInfo = packageManager.getPackageInfo(packageName, 0)
+      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+        pInfo.longVersionCode
+      } else {
+        @Suppress("DEPRECATION")
+        pInfo.versionCode.toLong()
+      }
+    } catch (e: Exception) {
+      -1L
+    }
+
+    val lastVersionCode = sharedPrefs.getLong("last_version_code", -1L)
+
+    // If it's a new install or update, copy/overwrite files from assets
+    if (currentVersionCode != lastVersionCode) {
+      CoroutineScope(Dispatchers.IO).launch {
+        try {
+          assets.list("")?.forEach { assetName ->
+            if (assetName.endsWith(".pdf") || assetName.endsWith(".txt") || assetName.endsWith(".md") || assetName.endsWith(".html")) {
+              val outFile = File(filesDir, assetName)
+              assets.open(assetName).use { input ->
+                FileOutputStream(outFile).use { output ->
+                  input.copyTo(output)
+                }
+              }
+            }
+          }
+          sharedPrefs.edit().putLong("last_version_code", currentVersionCode).apply()
+        } catch (e: Exception) {
+          android.util.Log.e("MainActivity", "Error copying assets", e)
+        }
+      }
     }
   }
 

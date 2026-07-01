@@ -20,9 +20,15 @@ data class SearchMatch(
     val contextText: String
 )
 
+data class PageTextAndPositions(
+    val text: String,
+    val positions: List<TextPosition?>
+)
+
 class PdfTextService {
 
     private val textCache = ConcurrentHashMap<String, MutableMap<Int, String>>()
+    private val positionCache = ConcurrentHashMap<String, ConcurrentHashMap<Int, PageTextAndPositions>>()
 
     companion object {
         private const val TAG = "PdfTextService"
@@ -34,6 +40,124 @@ class PdfTextService {
                 Log.e(TAG, "Failed to initialize PDFBox", e)
             }
         }
+    }
+
+    suspend fun getPageTextAndPositions(context: Context, uri: Uri, pageIndex: Int): PageTextAndPositions = withContext(Dispatchers.IO) {
+        val uriStr = uri.toString()
+        positionCache[uriStr]?.get(pageIndex)?.let { return@withContext it }
+
+        var document: PDDocument? = null
+        var inputStream: InputStream? = null
+        try {
+            inputStream = context.contentResolver.openInputStream(uri)
+            if (inputStream == null) return@withContext PageTextAndPositions("", emptyList())
+            document = PDDocument.load(inputStream)
+            if (pageIndex < 0 || pageIndex >= document.numberOfPages) return@withContext PageTextAndPositions("", emptyList())
+            
+            val stripper = object : PDFTextStripper() {
+                val charList = mutableListOf<Char>()
+                val posList = mutableListOf<TextPosition?>()
+                
+                init {
+                    sortByPosition = true
+                    startPage = pageIndex + 1
+                    endPage = pageIndex + 1
+                }
+                
+                override fun writeString(text: String, textPositions: List<TextPosition>) {
+                    for (i in text.indices) {
+                        charList.add(text[i])
+                        posList.add(textPositions.getOrNull(i))
+                    }
+                    super.writeString(text, textPositions)
+                }
+                
+                override fun writeLineSeparator() {
+                    val lineSep = lineSeparator ?: "\n"
+                    for (c in lineSep) {
+                        charList.add(c)
+                        posList.add(null)
+                    }
+                    super.writeLineSeparator()
+                }
+                
+                override fun writeWordSeparator() {
+                    val wordSep = wordSeparator ?: " "
+                    for (c in wordSep) {
+                        charList.add(c)
+                        posList.add(null)
+                    }
+                    super.writeWordSeparator()
+                }
+            }
+            
+            val text = stripper.getText(document) ?: ""
+            val result = PageTextAndPositions(text, stripper.posList)
+            positionCache.getOrPut(uriStr) { ConcurrentHashMap() }[pageIndex] = result
+            textCache.getOrPut(uriStr) { ConcurrentHashMap() }[pageIndex] = text
+            return@withContext result
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting text and positions for page $pageIndex", e)
+            return@withContext PageTextAndPositions("", emptyList())
+        } finally {
+            try {
+                document?.close()
+                inputStream?.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
+
+    fun getRectsForRange(pageData: PageTextAndPositions, start: Int, end: Int): List<RectF> {
+        val rects = mutableListOf<RectF>()
+        if (start < 0 || end > pageData.positions.size || start >= end) return rects
+        
+        val subPositions = pageData.positions.subList(start, end).filterNotNull()
+        if (subPositions.isEmpty()) return rects
+        
+        val lines = mutableListOf<MutableList<TextPosition>>()
+        for (pos in subPositions) {
+            if (lines.isEmpty()) {
+                lines.add(mutableListOf(pos))
+            } else {
+                val lastLine = lines.last()
+                val lastPos = lastLine.last()
+                if (abs(pos.yDirAdj - lastPos.yDirAdj) > pos.heightDir * 1.5) {
+                    lines.add(mutableListOf(pos))
+                } else {
+                    lastLine.add(pos)
+                }
+            }
+        }
+        
+        for (line in lines) {
+            var minX = Float.MAX_VALUE
+            var minY = Float.MAX_VALUE
+            var maxX = Float.MIN_VALUE
+            var maxY = Float.MIN_VALUE
+            
+            for (pos in line) {
+                val x = pos.xDirAdj
+                val y = pos.yDirAdj
+                val w = pos.widthDirAdj
+                val h = pos.heightDir
+                
+                val charLeft = x
+                val charTop = y - h
+                val charRight = x + w
+                val charBottom = y + h * 0.1f
+                
+                if (charLeft < minX) minX = charLeft
+                if (charTop < minY) minY = charTop
+                if (charRight > maxX) maxX = charRight
+                if (charBottom > maxY) maxY = charBottom
+            }
+            if (minX < maxX && minY < maxY) {
+                rects.add(RectF(minX, minY, maxX, maxY))
+            }
+        }
+        return rects
     }
 
     /**

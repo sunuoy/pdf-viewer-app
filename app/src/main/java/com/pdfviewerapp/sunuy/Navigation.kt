@@ -23,22 +23,28 @@ fun MainNavigation(
   val backStack = rememberNavBackStack(startDestination)
   val context = LocalContext.current
 
+  val navigateBack: () -> Unit = {
+    if (backStack.size > 1) {
+      backStack.removeLastOrNull()
+    } else {
+      (context as? Activity)?.finish()
+    }
+  }
+
   NavDisplay(
     backStack = backStack,
-    onBack = {
-      if (backStack.size > 1) {
-        backStack.removeLastOrNull()
-      } else {
-        (context as? Activity)?.finish()
-      }
-    },
+    onBack = navigateBack,
     entryProvider =
       entryProvider {
         entry<Splash> {
           SplashScreen(
             onSplashFinished = {
-              backStack.add(Home) // Navigate to Home
-              backStack.remove(Splash) // Pop Splash
+              if (backStack.firstOrNull() == Splash) {
+                backStack[0] = Home
+              } else {
+                backStack.add(Home)
+                backStack.remove(Splash)
+              }
             }
           )
         }
@@ -55,14 +61,14 @@ fun MainNavigation(
         }
         entry<SettingsPage> {
           SettingsScreen(
-            onBack = { backStack.removeLastOrNull() },
+            onBack = navigateBack,
             modifier = Modifier.fillMaxSize()
           )
         }
         entry<PdfViewer> { key ->
           PdfViewerScreen(
             pdfPath = key.pdfPath,
-            onBack = { backStack.removeLastOrNull() },
+            onBack = navigateBack,
             onNavigateToBookmarks = {
               backStack.add(Bookmarks(key.pdfPath))
             },
@@ -72,9 +78,11 @@ fun MainNavigation(
         entry<Bookmarks> { key ->
           BookmarkScreen(
             pdfPath = key.pdfPath,
-            onBack = { backStack.removeLastOrNull() },
+            onBack = navigateBack,
             onBookmarkClick = {
-              backStack.removeLastOrNull() // Go back to PDF viewer screen
+              if (backStack.size > 1) {
+                backStack.removeLastOrNull()
+              }
             },
             modifier = Modifier.fillMaxSize()
           )

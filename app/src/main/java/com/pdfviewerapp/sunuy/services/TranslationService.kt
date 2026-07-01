@@ -30,7 +30,8 @@ class TranslationService {
         LanguageItem(TranslateLanguage.ITALIAN, "Italian"),
         LanguageItem(TranslateLanguage.JAPANESE, "Japanese"),
         LanguageItem(TranslateLanguage.KOREAN, "Korean"),
-        LanguageItem(TranslateLanguage.RUSSIAN, "Russian")
+        LanguageItem(TranslateLanguage.RUSSIAN, "Russian"),
+        LanguageItem(TranslateLanguage.TELUGU, "Telugu")
     )
 
     private val modelManager = RemoteModelManager.getInstance()

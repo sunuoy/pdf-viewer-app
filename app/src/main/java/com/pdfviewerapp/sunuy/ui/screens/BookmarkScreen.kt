@@ -6,7 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -22,6 +22,7 @@ import com.pdfviewerapp.sunuy.data.entities.Bookmark
 import com.pdfviewerapp.sunuy.ui.PdfSessionViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -39,7 +40,7 @@ fun BookmarkScreen(
     val scope = rememberCoroutineScope()
     
     val sessionViewModel: PdfSessionViewModel = viewModel(
-        viewModelStoreOwner = LocalContext.current as ComponentActivity
+        viewModelStoreOwner = LocalActivity.current as ComponentActivity
     )
     
     val database = remember { AppDatabase.getDatabase(context) }
@@ -55,13 +56,14 @@ fun BookmarkScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
                 }
             )
         }
+
     ) { padding ->
         if (bookmarks.isEmpty()) {
             Box(
