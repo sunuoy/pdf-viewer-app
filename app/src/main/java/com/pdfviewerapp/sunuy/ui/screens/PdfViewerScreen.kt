@@ -32,6 +32,7 @@ import androidx.compose.ui.input.pointer.positionChanged
 import kotlin.math.abs
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -53,6 +54,8 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -150,8 +153,11 @@ fun PdfViewerScreen(
     }
     
     // UI control states
+    val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+    var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
     var isDarkThemeInverted by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
+    var isMenuExpanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var searchMatches by remember { mutableStateOf<List<SearchMatch>>(emptyList()) }
     var currentMatchIndex by remember { mutableStateOf(-1) }
@@ -187,6 +193,13 @@ fun PdfViewerScreen(
     var isEditorActive by remember { mutableStateOf(false) }
     var editorContent by remember { mutableStateOf("") }
     var isEditorLoading by remember { mutableStateOf(false) }
+
+    // PDF Direct Text Word Editor states
+    var isPdfWordEditorOpen by remember { mutableStateOf(false) }
+    var wordToFind by remember { mutableStateOf("") }
+    var replacementText by remember { mutableStateOf("") }
+    var isPdfEditorSaving by remember { mutableStateOf(false) }
+    var pdfReloadTrigger by remember { mutableStateOf(0) }
 
     fun startTtsForPage(pageIndex: Int) {
         if (isTtsLoading) return
@@ -287,7 +300,7 @@ fun PdfViewerScreen(
     val highlights by highlightListFlow.collectAsState(initial = emptyList())
     val highlightMatchesMap = remember { mutableStateMapOf<Int, MutableList<Pair<SearchMatch, Color>>>() }
 
-    LaunchedEffect(highlights) {
+    LaunchedEffect(highlights, pdfReloadTrigger) {
         highlightMatchesMap.clear()
         withContext(Dispatchers.IO) {
             highlights.forEach { highlight ->
@@ -387,7 +400,7 @@ fun PdfViewerScreen(
     }
     
     // Load PDF or Text/Markdown Document
-    LaunchedEffect(pdfPath) {
+    LaunchedEffect(pdfPath, pdfReloadTrigger) {
         withContext(Dispatchers.IO) {
             try {
                 val uri = Uri.parse(pdfPath)
@@ -402,6 +415,12 @@ fun PdfViewerScreen(
                     textDocumentContent = content
                     pageCount = 1
                 } else {
+                    try {
+                        pdfRenderer?.close()
+                        parcelFileDescriptor?.close()
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
                     val pfd = context.contentResolver.openFileDescriptor(uri, "r")
                     if (pfd != null) {
                         parcelFileDescriptor = pfd
@@ -421,11 +440,13 @@ fun PdfViewerScreen(
                         // Initialize PDFBox
                         PdfTextService.init(context)
                         
-                        // Restore last read position
-                        val recent = database.recentPdfDao().getRecentPdfByPath(pdfPath)
-                        if (recent != null && recent.lastPage < renderer.pageCount) {
-                            withContext(Dispatchers.Main) {
-                                listState.scrollToItem(recent.lastPage)
+                        // Restore last read position (only on initial load)
+                        if (pdfReloadTrigger == 0) {
+                            val recent = database.recentPdfDao().getRecentPdfByPath(pdfPath)
+                            if (recent != null && recent.lastPage < renderer.pageCount) {
+                                withContext(Dispatchers.Main) {
+                                    listState.scrollToItem(recent.lastPage)
+                                }
                             }
                         }
                     }
@@ -570,51 +591,87 @@ fun PdfViewerScreen(
                             tint = if (isCurrentPageBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    IconButton(onClick = onNavigateToBookmarks) {
-                        Icon(imageVector = Icons.Default.Bookmarks, contentDescription = "Open Bookmarks")
-                    }
-                    IconButton(onClick = { isHighlightManagerOpen = true }) {
-                        Icon(
-                            imageVector = Icons.Default.BorderColor,
-                            contentDescription = "Text Highlights",
-                            tint = if (highlights.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    IconButton(onClick = {
-                        if (isTextDocument) {
-                            editorContent = textDocumentContent ?: ""
-                            isEditorActive = true
-                        } else {
-                            scope.launch {
-                                isEditorLoading = true
-                                try {
-                                    val pageText = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), currentPageIndex)
-                                    editorContent = pageText
-                                    isEditorActive = true
-                                } catch (e: Exception) {
-                                    Log.e("PdfViewerScreen", "Failed to extract page text", e)
-                                    Toast.makeText(context, "Failed to extract text for editing", Toast.LENGTH_SHORT).show()
-                                } finally {
-                                    isEditorLoading = false
-                                }
-                            }
-                        }
-                    }) {
-                        if (isEditorLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        } else {
+                    Box {
+                        IconButton(onClick = { isMenuExpanded = true }) {
                             Icon(
-                                imageVector = Icons.Default.EditNote,
-                                contentDescription = "Edit Page / Document"
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More options menu",
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                    }
-                    IconButton(onClick = { sharePdf(context, Uri.parse(pdfPath)) }) {
-                        Icon(imageVector = Icons.Default.Share, contentDescription = "Share PDF")
+                        DropdownMenu(
+                            expanded = isMenuExpanded,
+                            onDismissRequest = { isMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Open Bookmarks") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    onNavigateToBookmarks()
+                                },
+                                leadingIcon = { Icon(Icons.Default.Bookmarks, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Text Highlights") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    isHighlightManagerOpen = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.BorderColor, contentDescription = null) }
+                            )
+                            if (!isTextDocument) {
+                                DropdownMenuItem(
+                                    text = { Text("Edit PDF Text") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        isPdfWordEditorOpen = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Edit Page / Document") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    if (isTextDocument) {
+                                        editorContent = textDocumentContent ?: ""
+                                        isEditorActive = true
+                                    } else {
+                                        scope.launch {
+                                            isEditorLoading = true
+                                            try {
+                                                val pageText = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), currentPageIndex)
+                                                editorContent = pageText
+                                                isEditorActive = true
+                                            } catch (e: Exception) {
+                                                Log.e("PdfViewerScreen", "Failed to extract page text", e)
+                                                Toast.makeText(context, "Failed to extract text for editing", Toast.LENGTH_SHORT).show()
+                                            } finally {
+                                                isEditorLoading = false
+                                            }
+                                        }
+                                    }
+                                },
+                                leadingIcon = {
+                                    if (isEditorLoading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.EditNote, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share PDF") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    sharePdf(context, Uri.parse(pdfPath))
+                                },
+                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                            )
+                        }
                     }
                 }
             )
@@ -649,6 +706,16 @@ fun PdfViewerScreen(
                                 imageVector = if (isAutoScrollActive) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
                                 contentDescription = "Auto Scroll",
                                 tint = if (isAutoScrollActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        IconButton(onClick = { 
+                            isVerticalScroll = !isVerticalScroll
+                            sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
+                        }) {
+                            Icon(
+                                imageVector = if (isVerticalScroll) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
+                                contentDescription = "Scroll Direction",
+                                tint = if (isVerticalScroll) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
                         }
                         IconButton(onClick = {
@@ -727,291 +794,432 @@ fun PdfViewerScreen(
                 val configuration = LocalConfiguration.current
                 val screenWidth = configuration.screenWidthDp.dp
                 
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 16.dp, horizontal = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    itemsIndexed(
-                        items = List(pageCount) { it },
-                        key = { index, _ -> "page_$index" }
-                    ) { index, _ ->
-                        // Load or Render bitmap
-                        var bitmap by remember { mutableStateOf<Bitmap?>(bitmapCache.get(index)) }
-                        val density = LocalDensity.current
-                        
-                        LaunchedEffect(index) {
-                            if (bitmap == null) {
-                                withContext(Dispatchers.IO) {
-                                    pdfRenderer?.let { renderer ->
-                                        try {
-                                            val pageSize = pageSizes[index] ?: Pair(1, 1)
-                                            val screenWidthPx = with(density) { screenWidth.toPx() }
-                                            val dynamicScale = (screenWidthPx / pageSize.first.toFloat()).coerceIn(1.5f, 2.5f)
-                                            
-                                            val bmp = renderPageToBitmap(renderer, index, dynamicScale, rendererMutex)
-                                            bitmapCache.put(index, bmp)
-                                            bitmap = bmp
-                                        } catch (e: Exception) {
-                                            Log.e("PdfViewerScreen", "Error rendering page $index", e)
-                                        }
+                val PageItem = @Composable { index: Int ->
+                    // Load or Render bitmap
+                    var bitmap by remember(index, pdfReloadTrigger) { mutableStateOf<Bitmap?>(bitmapCache.get(index)) }
+                    val density = LocalDensity.current
+                    
+                    LaunchedEffect(index, pdfReloadTrigger) {
+                        if (bitmap == null) {
+                            withContext(Dispatchers.IO) {
+                                pdfRenderer?.let { renderer ->
+                                    try {
+                                        val pageSize = pageSizes[index] ?: Pair(1, 1)
+                                        val screenWidthPx = with(density) { screenWidth.toPx() }
+                                        val dynamicScale = (screenWidthPx / pageSize.first.toFloat()).coerceIn(1.5f, 2.5f)
+                                        
+                                        val bmp = renderPageToBitmap(renderer, index, dynamicScale, rendererMutex)
+                                        bitmapCache.put(index, bmp)
+                                        bitmap = bmp
+                                    } catch (e: Exception) {
+                                        Log.e("PdfViewerScreen", "Error rendering page $index", e)
                                     }
                                 }
                             }
                         }
-                        
-                        val pageSize = pageSizes[index] ?: Pair(1, 1)
-                        val aspectRatio = pageSize.first.toFloat() / pageSize.second.toFloat()
-                        
-                        Card(
-                            modifier = Modifier
+                    }
+                    
+                    val pageSize = pageSizes[index] ?: Pair(1, 1)
+                    val aspectRatio = pageSize.first.toFloat() / pageSize.second.toFloat()
+                    
+                    Card(
+                        modifier = if (isVerticalScroll) {
+                            Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(aspectRatio)
-                                .padding(horizontal = 8.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isDarkThemeInverted) Color(0xFF1E1E1E) else Color.White
-                            ),
-                            elevation = CardDefaults.cardElevation(2.dp)
-                        ) {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                if (bitmap != null) {
-                                    ZoomableImage(
-                                        bitmap = bitmap!!,
-                                        aspectRatio = aspectRatio,
-                                        isInverted = isDarkThemeInverted,
-                                        colorFilter = if (isDarkThemeInverted) ColorFilter.colorMatrix(darkInvertMatrix) else null,
-                                        searchMatches = searchMatches.filter { it.pageIndex == index },
-                                        highlightMatches = highlightMatchesMap[index] ?: emptyList(),
-                                        ttsSpokenWordRects = if (index == activeTtsPageIndex) currentSpokenWordRects else emptyList(),
-                                        pdfPageWidth = pageSize.first.toFloat(),
-                                        pdfPageHeight = pageSize.second.toFloat()
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator(strokeWidth = 2.dp)
-                                    }
+                                .padding(horizontal = 8.dp)
+                        } else {
+                            Modifier
+                                .fillMaxHeight()
+                                .aspectRatio(aspectRatio)
+                                .padding(vertical = 8.dp)
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isDarkThemeInverted) Color(0xFF1E1E1E) else Color.White
+                        ),
+                        elevation = CardDefaults.cardElevation(2.dp)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (bitmap != null) {
+                                ZoomableImage(
+                                    bitmap = bitmap!!,
+                                    aspectRatio = aspectRatio,
+                                    isInverted = isDarkThemeInverted,
+                                    colorFilter = if (isDarkThemeInverted) ColorFilter.colorMatrix(darkInvertMatrix) else null,
+                                    searchMatches = searchMatches.filter { it.pageIndex == index },
+                                    highlightMatches = highlightMatchesMap[index] ?: emptyList(),
+                                    ttsSpokenWordRects = if (index == activeTtsPageIndex) currentSpokenWordRects else emptyList(),
+                                    pdfPageWidth = pageSize.first.toFloat(),
+                                    pdfPageHeight = pageSize.second.toFloat()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(strokeWidth = 2.dp)
                                 }
+                            }
 
-                                val hasTranslation = activeTranslations.containsKey(index)
-                                val isTranslatingPage = isTranslatingMap[index] == true
+                            val hasTranslation = activeTranslations.containsKey(index)
+                            val isTranslatingPage = isTranslatingMap[index] == true
+                            
+                            if (isTranslatingPage) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = 0.4f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                                }
+                            } else if (hasTranslation && isTranslationBarActive) {
+                                val translationText = activeTranslations[index] ?: ""
                                 
-                                if (isTranslatingPage) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.4f)),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                                    }
-                                } else if (hasTranslation && isTranslationBarActive) {
-                                    val translationText = activeTranslations[index] ?: ""
-                                    
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                if (isDarkThemeInverted) Color(0xED1E1E1E)
-                                                else Color(0xF2F8FAFC)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            if (isDarkThemeInverted) Color(0xED1E1E1E)
+                                            else Color(0xF2F8FAFC)
+                                        )
+                                        .padding(16.dp)
+                                ) {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        // Control Header
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val currentLangName = remember(targetLanguageCode) {
+                                                translationService.supportedLanguages.find { it.code == targetLanguageCode }?.name ?: "Spanish"
+                                            }
+                                            Text(
+                                                text = "Translation ($currentLangName)",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
                                             )
-                                            .padding(16.dp)
-                                    ) {
-                                        Column(modifier = Modifier.fillMaxSize()) {
-                                            // Control Header
+                                            Row {
+                                                when (ttsState) {
+                                                    TtsState.SPEAKING -> {
+                                                        IconButton(
+                                                            onClick = { ttsService.pause() }
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Pause,
+                                                                contentDescription = "Pause speaking",
+                                                                tint = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                        IconButton(
+                                                            onClick = { ttsService.stop() }
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Stop,
+                                                                contentDescription = "Stop speaking",
+                                                                tint = MaterialTheme.colorScheme.error
+                                                            )
+                                                        }
+                                                    }
+                                                    TtsState.PAUSED -> {
+                                                        IconButton(
+                                                            onClick = { ttsService.resume() }
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.PlayArrow,
+                                                                contentDescription = "Resume speaking",
+                                                                tint = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                        IconButton(
+                                                            onClick = { ttsService.stop() }
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Stop,
+                                                                contentDescription = "Stop speaking",
+                                                                tint = MaterialTheme.colorScheme.error
+                                                            )
+                                                        }
+                                                    }
+                                                    TtsState.IDLE -> {
+                                                        IconButton(
+                                                            onClick = { ttsService.startSpeaking(translationText) }
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.VolumeUp,
+                                                                contentDescription = "Speak translation",
+                                                                tint = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                IconButton(
+                                                    onClick = {
+                                                        ttsService.stop()
+                                                        activeTranslations.remove(index)
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Dismiss translation",
+                                                        tint = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                        
+                                        // TTS Speed & Pitch controls
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                val currentLangName = remember(targetLanguageCode) {
-                                                    translationService.supportedLanguages.find { it.code == targetLanguageCode }?.name ?: "Spanish"
-                                                }
                                                 Text(
-                                                    text = "Translation ($currentLangName)",
-                                                    style = MaterialTheme.typography.titleMedium,
+                                                    text = "Speed:",
+                                                    style = MaterialTheme.typography.bodySmall,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.primary
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
-                                                Row {
-                                                    when (ttsState) {
-                                                        TtsState.SPEAKING -> {
-                                                            IconButton(
-                                                                onClick = { ttsService.pause() }
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Default.Pause,
-                                                                    contentDescription = "Pause speaking",
-                                                                    tint = MaterialTheme.colorScheme.primary
-                                                                )
-                                                            }
-                                                            IconButton(
-                                                                onClick = { ttsService.stop() }
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Default.Stop,
-                                                                    contentDescription = "Stop speaking",
-                                                                    tint = MaterialTheme.colorScheme.error
-                                                                )
-                                                            }
-                                                        }
-                                                        TtsState.PAUSED -> {
-                                                            IconButton(
-                                                                onClick = { ttsService.resume() }
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Default.PlayArrow,
-                                                                    contentDescription = "Resume speaking",
-                                                                    tint = MaterialTheme.colorScheme.primary
-                                                                )
-                                                            }
-                                                            IconButton(
-                                                                onClick = { ttsService.stop() }
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Default.Stop,
-                                                                    contentDescription = "Stop speaking",
-                                                                    tint = MaterialTheme.colorScheme.error
-                                                                )
-                                                            }
-                                                        }
-                                                        TtsState.IDLE -> {
-                                                            IconButton(
-                                                                onClick = { ttsService.startSpeaking(translationText) }
-                                                            ) {
-                                                                Icon(
-                                                                    imageVector = Icons.Default.VolumeUp,
-                                                                    contentDescription = "Speak translation",
-                                                                    tint = MaterialTheme.colorScheme.primary
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                    IconButton(
+                                                listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
+                                                    val isSelected = currentTtsSpeed == speed
+                                                    val speedLabel = if (speed == 1.0f) "Normal" else "${speed}x"
+                                                    FilterChip(
+                                                        selected = isSelected,
                                                         onClick = {
-                                                            ttsService.stop()
-                                                            activeTranslations.remove(index)
-                                                        }
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Close,
-                                                            contentDescription = "Dismiss translation",
-                                                            tint = MaterialTheme.colorScheme.error
-                                                        )
-                                                    }
+                                                            currentTtsSpeed = speed
+                                                            ttsService.setSpeed(speed)
+                                                        },
+                                                        label = { Text(speedLabel, fontSize = 11.sp) },
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        ),
+                                                        modifier = Modifier.height(28.dp)
+                                                    )
                                                 }
                                             }
-                                            
-                                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                            
-                                            // TTS Speed & Pitch controls
-                                            Column(
-                                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = "Speed:",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                    listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
-                                                        val isSelected = currentTtsSpeed == speed
-                                                        val speedLabel = if (speed == 1.0f) "Normal" else "${speed}x"
-                                                        FilterChip(
-                                                            selected = isSelected,
-                                                            onClick = {
-                                                                currentTtsSpeed = speed
-                                                                ttsService.setSpeed(speed)
-                                                            },
-                                                            label = { Text(speedLabel, fontSize = 11.sp) },
-                                                            colors = FilterChipDefaults.filterChipColors(
-                                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                                            ),
-                                                            modifier = Modifier.height(28.dp)
-                                                        )
-                                                    }
-                                                }
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = "Pitch:",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                    listOf(0.8f, 1.0f, 1.2f).forEach { pitch ->
-                                                        val isSelected = currentTtsPitch == pitch
-                                                        val pitchLabel = when (pitch) {
-                                                            0.8f -> "Low"
-                                                            1.0f -> "Normal"
-                                                            else -> "High"
-                                                        }
-                                                        FilterChip(
-                                                            selected = isSelected,
-                                                            onClick = {
-                                                                currentTtsPitch = pitch
-                                                                ttsService.setPitch(pitch)
-                                                            },
-                                                            label = { Text(pitchLabel, fontSize = 11.sp) },
-                                                            colors = FilterChipDefaults.filterChipColors(
-                                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                                            ),
-                                                            modifier = Modifier.height(28.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                            
-                                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                                            
-                                            // Scrollable Translated Text
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .weight(1f)
-                                            ) {
-                                                val transTextValue = remember(translationText) {
-                                                    TextFieldValue(translationText)
-                                                }
-                                                OutlinedTextField(
-                                                    value = transTextValue,
-                                                    onValueChange = {},
-                                                    readOnly = true,
-                                                    modifier = Modifier.fillMaxSize(),
-                                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                                        fontSize = 15.sp,
-                                                        lineHeight = 22.sp
-                                                    ),
-                                                    colors = TextFieldDefaults.colors(
-                                                        focusedContainerColor = Color.Transparent,
-                                                        unfocusedContainerColor = Color.Transparent,
-                                                        disabledContainerColor = Color.Transparent,
-                                                        focusedIndicatorColor = Color.Transparent,
-                                                        unfocusedIndicatorColor = Color.Transparent
-                                                    )
+                                                Text(
+                                                    text = "Pitch:",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
+                                                listOf(0.8f, 1.0f, 1.2f).forEach { pitch ->
+                                                    val isSelected = currentTtsPitch == pitch
+                                                    val pitchLabel = when (pitch) {
+                                                        0.8f -> "Low"
+                                                        1.0f -> "Normal"
+                                                        else -> "High"
+                                                    }
+                                                    FilterChip(
+                                                        selected = isSelected,
+                                                        onClick = {
+                                                            currentTtsPitch = pitch
+                                                            ttsService.setPitch(pitch)
+                                                        },
+                                                        label = { Text(pitchLabel, fontSize = 11.sp) },
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        ),
+                                                        modifier = Modifier.height(28.dp)
+                                                    )
+                                                }
                                             }
+                                        }
+                                        
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                        
+                                        // Scrollable Translated Text
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f)
+                                        ) {
+                                            val transTextValue = remember(translationText) {
+                                                TextFieldValue(translationText)
+                                            }
+                                            OutlinedTextField(
+                                                value = transTextValue,
+                                                onValueChange = {},
+                                                readOnly = true,
+                                                modifier = Modifier.fillMaxSize(),
+                                                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontSize = 15.sp,
+                                                    lineHeight = 22.sp
+                                                ),
+                                                colors = TextFieldDefaults.colors(
+                                                    focusedContainerColor = Color.Transparent,
+                                                    unfocusedContainerColor = Color.Transparent,
+                                                    disabledContainerColor = Color.Transparent,
+                                                    focusedIndicatorColor = Color.Transparent,
+                                                    unfocusedIndicatorColor = Color.Transparent
+                                                )
+                                            )
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+                }
+
+                if (isVerticalScroll) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 16.dp, horizontal = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        itemsIndexed(
+                            items = List(pageCount) { it },
+                            key = { index, _ -> "page_$index" }
+                        ) { index, _ ->
+                            PageItem(index)
+                        }
+                    }
+                } else {
+                    LazyRow(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp, horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        itemsIndexed(
+                            items = List(pageCount) { it },
+                            key = { index, _ -> "page_$index" }
+                        ) { index, _ ->
+                            PageItem(index)
+                        }
+                    }
+                }
+
+                // Smooth scroll progress calculation
+                val totalItems = pageCount
+                val firstVisibleItem = listState.firstVisibleItemIndex
+                val firstVisibleOffset = listState.firstVisibleItemScrollOffset
+                val firstVisibleItemInfo = listState.layoutInfo.visibleItemsInfo.firstOrNull()
+                
+                val scrollFraction = remember(firstVisibleItem, firstVisibleOffset, totalItems) {
+                    if (totalItems <= 1) 0f
+                    else {
+                        val itemSize = firstVisibleItemInfo?.size ?: 1
+                        val progress = firstVisibleOffset.toFloat() / itemSize.toFloat()
+                        ((firstVisibleItem.toFloat() + progress) / totalItems.toFloat()).coerceIn(0f, 1f)
+                    }
+                }
+
+                if (isVerticalScroll && totalItems > 1) {
+                    var trackHeight by remember { mutableStateOf(1f) }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .width(36.dp) // Touch-friendly target area
+                            .onGloballyPositioned { coordinates ->
+                                trackHeight = coordinates.size.height.toFloat()
+                            }
+                            .pointerInput(totalItems) {
+                                detectTapGestures { offset ->
+                                    val fraction = (offset.y / trackHeight).coerceIn(0f, 1f)
+                                    val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                    scope.launch {
+                                        listState.scrollToItem(targetIndex)
+                                    }
+                                }
+                            }
+                            .pointerInput(totalItems) {
+                                detectDragGestures { change, _ ->
+                                    change.consume()
+                                    val fraction = (change.position.y / trackHeight).coerceIn(0f, 1f)
+                                    val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                    scope.launch {
+                                        listState.scrollToItem(targetIndex)
+                                    }
+                                }
+                            }
+                            .padding(vertical = 16.dp, horizontal = 8.dp)
+                    ) {
+                        // Track
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                        )
+                        // Thumb
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(0.15f) // Thumb height is 15% of track height
+                                .graphicsLayer {
+                                    translationY = (this.size.height * 0.85f) * scrollFraction
+                                }
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                        )
+                    }
+                } else if (!isVerticalScroll && totalItems > 1) {
+                    var trackWidth by remember { mutableStateOf(1f) }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(36.dp) // Touch-friendly target area
+                            .onGloballyPositioned { coordinates ->
+                                trackWidth = coordinates.size.width.toFloat()
+                            }
+                            .pointerInput(totalItems) {
+                                detectTapGestures { offset ->
+                                    val fraction = (offset.x / trackWidth).coerceIn(0f, 1f)
+                                    val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                    scope.launch {
+                                        listState.scrollToItem(targetIndex)
+                                    }
+                                }
+                            }
+                            .pointerInput(totalItems) {
+                                detectDragGestures { change, _ ->
+                                    change.consume()
+                                    val fraction = (change.position.x / trackWidth).coerceIn(0f, 1f)
+                                    val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                    scope.launch {
+                                        listState.scrollToItem(targetIndex)
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        // Track
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                        )
+                        // Thumb
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(0.15f) // Thumb width is 15% of track width
+                                .graphicsLayer {
+                                    translationX = (this.size.width * 0.85f) * scrollFraction
+                                }
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                        )
                     }
                 }
             } else {
@@ -1902,6 +2110,113 @@ fun PdfViewerScreen(
                     },
                     dismissButton = {
                         TextButton(onClick = { isEditorActive = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
+            // PDF Direct Text Word Editor Dialog
+            if (isPdfWordEditorOpen) {
+                AlertDialog(
+                    onDismissRequest = { 
+                        if (!isPdfEditorSaving) {
+                            isPdfWordEditorOpen = false
+                            wordToFind = ""
+                            replacementText = ""
+                        }
+                    },
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text("Edit PDF Text (Page ${currentPageIndex + 1})", style = MaterialTheme.typography.titleMedium)
+                        }
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Text(
+                                text = "Search for a word/phrase on this page and replace it. Old text will be whited-out and replaced with new text.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            
+                            OutlinedTextField(
+                                value = wordToFind,
+                                onValueChange = { wordToFind = it },
+                                label = { Text("Word/Phrase to find") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            
+                            OutlinedTextField(
+                                value = replacementText,
+                                onValueChange = { replacementText = it },
+                                label = { Text("Replacement text") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isPdfEditorSaving) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            } else {
+                                Button(
+                                    onClick = {
+                                        if (wordToFind.isNotBlank()) {
+                                            isPdfEditorSaving = true
+                                            scope.launch {
+                                                val success = pdfTextService.editTextOnPage(
+                                                    context = context,
+                                                    uri = Uri.parse(pdfPath),
+                                                    pageIndex = currentPageIndex,
+                                                    targetWord = wordToFind,
+                                                    replacementText = replacementText
+                                                )
+                                                isPdfEditorSaving = false
+                                                if (success) {
+                                                    Toast.makeText(context, "Text replaced successfully!", Toast.LENGTH_SHORT).show()
+                                                    bitmapCache.evictAll()
+                                                    pdfReloadTrigger++
+                                                    isPdfWordEditorOpen = false
+                                                    wordToFind = ""
+                                                    replacementText = ""
+                                                } else {
+                                                    Toast.makeText(context, "Phrase not found on this page.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    },
+                                    enabled = wordToFind.isNotBlank()
+                                ) {
+                                    Text("Replace")
+                                }
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                isPdfWordEditorOpen = false
+                                wordToFind = ""
+                                replacementText = ""
+                            },
+                            enabled = !isPdfEditorSaving
+                        ) {
                             Text("Cancel")
                         }
                     }

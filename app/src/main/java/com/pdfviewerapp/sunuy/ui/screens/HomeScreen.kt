@@ -471,6 +471,60 @@ fun HomeScreen(
                             )
 
                             DropdownMenuItem(
+                                text = { Text("Open Multi-page PDF") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    scope.launch {
+                                        try {
+                                            val multiPageFile = File(context.filesDir, "multipage_sample.pdf")
+                                            withContext(Dispatchers.IO) {
+                                                val pdfDocument = android.graphics.pdf.PdfDocument()
+                                                val paint = android.graphics.Paint()
+                                                
+                                                for (i in 1..5) {
+                                                    val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, i).create()
+                                                    val page = pdfDocument.startPage(pageInfo)
+                                                    val canvas = page.canvas
+                                                    canvas.drawColor(android.graphics.Color.WHITE)
+                                                    
+                                                    // Draw title
+                                                    paint.isFakeBoldText = true
+                                                    paint.textSize = 28f
+                                                    paint.color = android.graphics.Color.BLACK
+                                                    canvas.drawText("Sample Multi-page PDF - Page $i", 50f, 100f, paint)
+                                                    
+                                                    // Draw description lines
+                                                    paint.isFakeBoldText = false
+                                                    paint.textSize = 18f
+                                                    canvas.drawText("This is page number $i of our generated test PDF file.", 50f, 180f, paint)
+                                                    canvas.drawText("You can test the interactive scrollbar with this file.", 50f, 220f, paint)
+                                                    canvas.drawText("Drag or tap the scrollbar on the right side of the screen.", 50f, 260f, paint)
+                                                    canvas.drawText("It will immediately jump or scroll to the target page.", 50f, 300f, paint)
+                                                    
+                                                    // Add some filler text
+                                                    for (line in 1..10) {
+                                                        canvas.drawText("Filler line $line of page $i: Lorem ipsum dolor sit amet, consectetur adipiscing elit.", 50f, 340f + (line * 30f), paint)
+                                                    }
+                                                    
+                                                    pdfDocument.finishPage(page)
+                                                }
+                                                
+                                                FileOutputStream(multiPageFile).use { out ->
+                                                    pdfDocument.writeTo(out)
+                                                }
+                                                pdfDocument.close()
+                                            }
+                                            val uriString = Uri.fromFile(multiPageFile).toString()
+                                            onPdfSelected(uriString)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Error generating PDF: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                leadingIcon = { Icon(Icons.Default.Article, contentDescription = null) }
+                            )
+
+                            DropdownMenuItem(
                                 text = { Text("Google Drive Sync") },
                                 onClick = {
                                     isMenuExpanded = false

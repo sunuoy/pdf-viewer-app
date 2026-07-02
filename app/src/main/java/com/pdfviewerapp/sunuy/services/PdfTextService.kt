@@ -321,4 +321,188 @@ class PdfTextService {
         }
         return@withContext results
     }
+
+    suspend fun editTextOnPage(
+        context: Context,
+        uri: Uri,
+        pageIndex: Int,
+        targetWord: String,
+        replacementText: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (targetWord.isBlank()) return@withContext false
+        
+        var document: PDDocument? = null
+        var inputStream: java.io.InputStream? = null
+        val tempFile = java.io.File(context.cacheDir, "temp_edit_${System.currentTimeMillis()}.pdf")
+        
+        try {
+            inputStream = context.contentResolver.openInputStream(uri)
+            if (inputStream == null) return@withContext false
+            document = PDDocument.load(inputStream)
+            if (pageIndex < 0 || pageIndex >= document.numberOfPages) return@withContext false
+            
+            val page = document.getPage(pageIndex)
+            val pageHeight = page.mediaBox.height
+            
+            // Search for targetWord occurrences on this specific page to get coordinates
+            val matchRects = mutableListOf<Pair<RectF, Float>>() // Pair of Bounding Rect and baseline Y
+            
+            val stripper = object : PDFTextStripper() {
+                init {
+                    sortByPosition = true
+                    startPage = pageIndex + 1
+                    endPage = pageIndex + 1
+                }
+
+                override fun writeString(text: String, textPositions: List<TextPosition>) {
+                    val lowerText = text.lowercase()
+                    val lowerQuery = targetWord.lowercase()
+                    var index = 0
+                    
+                    while (true) {
+                        index = lowerText.indexOf(lowerQuery, index)
+                        if (index == -1) break
+                        
+                        val length = lowerQuery.length
+                        if (index + length <= textPositions.size) {
+                            val matchPositions = textPositions.subList(index, index + length)
+                            
+                            // Group matching characters by line
+                            val lines = mutableListOf<MutableList<TextPosition>>()
+                            for (pos in matchPositions) {
+                                if (lines.isEmpty()) {
+                                    lines.add(mutableListOf(pos))
+                                } else {
+                                    val lastLine = lines.last()
+                                    val lastPos = lastLine.last()
+                                    if (abs(pos.yDirAdj - lastPos.yDirAdj) > pos.heightDir * 1.5) {
+                                        lines.add(mutableListOf(pos))
+                                    } else {
+                                        lastLine.add(pos)
+                                    }
+                                }
+                            }
+                            
+                            for (line in lines) {
+                                var minX = Float.MAX_VALUE
+                                var minY = Float.MAX_VALUE
+                                var maxX = Float.MIN_VALUE
+                                var maxY = Float.MIN_VALUE
+                                var baselineYSum = 0f
+                                var charCount = 0
+                                
+                                for (pos in line) {
+                                    val x = pos.xDirAdj
+                                    val y = pos.yDirAdj
+                                    val w = pos.widthDirAdj
+                                    val h = pos.heightDir
+                                    
+                                    val charLeft = x
+                                    val charTop = y - h
+                                    val charRight = x + w
+                                    val charBottom = y + h * 0.1f
+                                    
+                                    if (charLeft < minX) minX = charLeft
+                                    if (charTop < minY) minY = charTop
+                                    if (charRight > maxX) maxX = charRight
+                                    if (charBottom > maxY) maxY = charBottom
+                                    
+                                    baselineYSum += y
+                                    charCount++
+                                }
+                                
+                                if (minX < maxX && minY < maxY && charCount > 0) {
+                                    val avgBaselineY = baselineYSum / charCount
+                                    matchRects.add(Pair(RectF(minX, minY, maxX, maxY), avgBaselineY))
+                                }
+                            }
+                        }
+                        index += length
+                    }
+                }
+            }
+            
+            // Triggers the text parsing and populates matchRects
+            stripper.getText(document)
+            
+            if (matchRects.isEmpty()) {
+                document.close()
+                return@withContext false
+            }
+            
+            // Open content stream to append drawing commands
+            val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
+                document,
+                page,
+                com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND,
+                true,
+                true
+            )
+            
+            for (match in matchRects) {
+                val rect = match.first
+                val baselineY = match.second
+                
+                val rectLeft = rect.left
+                val rectWidth = rect.right - rect.left
+                val rectHeight = rect.bottom - rect.top
+                val rectBottom = pageHeight - rect.bottom
+                
+                // Draw white rectangle to whiteout old text
+                contentStream.setNonStrokingColor(1f, 1f, 1f)
+                contentStream.addRect(rectLeft, rectBottom, rectWidth, rectHeight)
+                contentStream.fill()
+                
+                // Draw replacement text
+                contentStream.beginText()
+                // Use HELVETICA font
+                contentStream.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA, rectHeight * 0.8f)
+                contentStream.setNonStrokingColor(0f, 0f, 0f) // Black text color
+                contentStream.newLineAtOffset(rectLeft, pageHeight - baselineY)
+                contentStream.showText(replacementText)
+                contentStream.endText()
+            }
+            
+            contentStream.close()
+            
+            // Save to temp file
+            document.save(tempFile)
+            document.close()
+            document = null
+            
+            // Clear caches
+            val uriStr = uri.toString()
+            textCache.remove(uriStr)
+            positionCache.remove(uriStr)
+            
+            // Copy back to original uri
+            var outputStream: java.io.OutputStream? = null
+            try {
+                outputStream = context.contentResolver.openOutputStream(uri, "rwt") ?: context.contentResolver.openOutputStream(uri)
+                if (outputStream != null) {
+                    tempFile.inputStream().use { input ->
+                        input.copyTo(outputStream)
+                    }
+                    return@withContext true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error writing edited PDF back to original source", e)
+            } finally {
+                outputStream?.close()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error editing text on PDF page $pageIndex", e)
+        } finally {
+            try {
+                document?.close()
+                inputStream?.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
+        }
+        return@withContext false
+    }
 }

@@ -1,5 +1,6 @@
 package com.pdfviewerapp.sunuy.ui.screens
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -29,10 +30,22 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var autoSaveLocationPrompt by remember { mutableStateOf(true) }
-    var highResRendering by remember { mutableStateOf(true) }
-    var autoSyncCloud by remember { mutableStateOf(false) }
-    var nightModeDefault by remember { mutableStateOf(false) }
+    val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+
+    var autoSaveLocationPrompt by remember { mutableStateOf(sharedPrefs.getBoolean("auto_save_location_prompt", true)) }
+    var highResRendering by remember { mutableStateOf(sharedPrefs.getBoolean("high_res_rendering", true)) }
+    var autoSyncCloud by remember { mutableStateOf(sharedPrefs.getBoolean("auto_sync_cloud", false)) }
+    var nightModeDefault by remember { mutableStateOf(sharedPrefs.getBoolean("night_mode_default", false)) }
+    var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
+
+    val versionName = remember {
+        try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            pInfo.versionName ?: "1.0.1"
+        } catch (e: Exception) {
+            "1.0.1"
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -82,7 +95,10 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = highResRendering,
-                            onCheckedChange = { highResRendering = it }
+                            onCheckedChange = { 
+                                highResRendering = it
+                                sharedPrefs.edit().putBoolean("high_res_rendering", it).apply()
+                            }
                         )
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
@@ -97,7 +113,28 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = nightModeDefault,
-                            onCheckedChange = { nightModeDefault = it }
+                            onCheckedChange = { 
+                                nightModeDefault = it
+                                sharedPrefs.edit().putBoolean("night_mode_default", it).apply()
+                            }
+                        )
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Vertical Scrolling Direction", fontWeight = FontWeight.SemiBold)
+                            Text("Scroll pages up and down continuously (disable for horizontal flipping)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                        }
+                        Switch(
+                            checked = isVerticalScroll,
+                            onCheckedChange = { 
+                                isVerticalScroll = it
+                                sharedPrefs.edit().putBoolean("is_vertical_scroll", it).apply()
+                            }
                         )
                     }
                 }
@@ -128,7 +165,10 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoSaveLocationPrompt,
-                            onCheckedChange = { autoSaveLocationPrompt = it }
+                            onCheckedChange = { 
+                                autoSaveLocationPrompt = it
+                                sharedPrefs.edit().putBoolean("auto_save_location_prompt", it).apply()
+                            }
                         )
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
@@ -143,7 +183,10 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = autoSyncCloud,
-                            onCheckedChange = { autoSyncCloud = it }
+                            onCheckedChange = { 
+                                autoSyncCloud = it
+                                sharedPrefs.edit().putBoolean("auto_sync_cloud", it).apply()
+                            }
                         )
                     }
                 }
@@ -164,7 +207,7 @@ fun SettingsScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Version 3.0.0",
+                        text = "Version $versionName",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.titleSmall
