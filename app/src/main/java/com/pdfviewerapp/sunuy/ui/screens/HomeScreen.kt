@@ -102,6 +102,10 @@ fun HomeScreen(
     var showMergeReorderDialog by remember { mutableStateOf(false) }
     var mergedFileUri by remember { mutableStateOf<Uri?>(null) }
     var isMenuExpanded by remember { mutableStateOf(false) }
+    var isGoogleDriveConnected by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.isLoggedIn(context)) }
+    var googleDriveEmail by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.getEmail(context)) }
+    var showSignInDialog by remember { mutableStateOf(false) }
+    var inputEmail by remember { mutableStateOf("younus@gmail.com") }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var autoSaveLocationPrompt by remember { mutableStateOf(true) }
@@ -528,7 +532,10 @@ fun HomeScreen(
                                 text = { Text("Google Drive Sync") },
                                 onClick = {
                                     isMenuExpanded = false
-                                    com.pdfviewerapp.sunuy.services.GoogleDriveManager.startSignIn(context)
+                                    currentTab = HomeTab.CLOUD_DRIVE
+                                    if (!isGoogleDriveConnected) {
+                                        showSignInDialog = true
+                                    }
                                 },
                                 leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
                             )
@@ -707,6 +714,61 @@ fun HomeScreen(
                 }
             }
         } else if (currentTab == HomeTab.CLOUD_DRIVE) {
+            // Sign In Dialog
+            if (showSignInDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSignInDialog = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CloudSync,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Google Sign-In", style = MaterialTheme.typography.titleLarge)
+                        }
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                "Connect to Google Drive to access and view your cloud PDF files directly inside the app.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+                            OutlinedTextField(
+                                value = inputEmail,
+                                onValueChange = { inputEmail = it },
+                                label = { Text("Email Address") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (inputEmail.isNotBlank()) {
+                                    com.pdfviewerapp.sunuy.services.GoogleDriveManager.signIn(context, inputEmail)
+                                    isGoogleDriveConnected = true
+                                    googleDriveEmail = inputEmail
+                                    showSignInDialog = false
+                                    Toast.makeText(context, "Successfully signed in to Google Drive!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("Sign In")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSignInDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -719,59 +781,179 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
-                if (isCloudLoading) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                } else if (cloudFiles.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No cloud PDF files found. Connect to Google Drive or OneDrive.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(bottom = 16.dp)
+
+                // Connection status card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isGoogleDriveConnected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
                     ) {
-                        items(cloudFiles) { file ->
-                            Card(
-                                onClick = { Toast.makeText(context, "Opening ${file.name} from ${file.source}", Toast.LENGTH_SHORT).show() },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                elevation = CardDefaults.cardElevation(2.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.PictureAsPdf,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(40.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudSync,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Google Drive Sync",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyLarge
                                     )
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(file.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Surface(
-                                                shape = RoundedCornerShape(4.dp),
-                                                color = if (file.source == "google_drive") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
-                                            ) {
-                                                Text(
-                                                    text = if (file.source == "google_drive") "Google Drive" else "OneDrive",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                )
+                                    Text(
+                                        text = if (isGoogleDriveConnected) "Connected: $googleDriveEmail" else "Sign in to access your Google Drive",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    if (isGoogleDriveConnected) {
+                                        com.pdfviewerapp.sunuy.services.GoogleDriveManager.signOut(context)
+                                        isGoogleDriveConnected = false
+                                    } else {
+                                        showSignInDialog = true
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isGoogleDriveConnected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                )
+                            ) {
+                                Text(if (isGoogleDriveConnected) "Sign Out" else "Connect")
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (isGoogleDriveConnected) {
+                    var driveFiles by remember { mutableStateOf<List<com.pdfviewerapp.sunuy.data.entities.CloudFile>>(emptyList()) }
+                    LaunchedEffect(Unit) {
+                        com.pdfviewerapp.sunuy.services.GoogleDriveManager.getPdfFiles { list ->
+                            driveFiles = list
+                        }
+                    }
+
+                    if (driveFiles.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No files found in Google Drive.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+                        }
+                    } else {
+                        Text(
+                            text = "Google Drive Files",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(bottom = 16.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            items(driveFiles) { file ->
+                                Card(
+                                    onClick = {
+                                        // Download/copy Drive file locally and open it in the PDF Viewer app
+                                        scope.launch {
+                                            isProcessing = true
+                                            processingMessage = "Fetching ${file.name} from Google Drive..."
+                                            val localFile = withContext(Dispatchers.IO) {
+                                                com.pdfviewerapp.sunuy.services.GoogleDriveManager.getDriveFile(context, file.id)
                                             }
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(file.getFormattedSize(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                            isProcessing = false
+                                            if (localFile != null && localFile.exists()) {
+                                                val uriString = Uri.fromFile(localFile).toString()
+                                                val existing = database.recentPdfDao().getRecentPdfByPath(uriString)
+                                                val recentPdf = RecentPdf(
+                                                    id = existing?.id ?: 0,
+                                                    name = localFile.name,
+                                                    path = uriString,
+                                                    lastOpened = System.currentTimeMillis(),
+                                                    lastPage = existing?.lastPage ?: 0
+                                                )
+                                                database.recentPdfDao().insertRecentPdf(recentPdf)
+                                                onPdfSelected(uriString)
+                                            } else {
+                                                Toast.makeText(context, "Failed to download file", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    elevation = CardDefaults.cardElevation(2.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PictureAsPdf,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(40.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(file.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = MaterialTheme.colorScheme.primaryContainer
+                                                ) {
+                                                    Text(
+                                                        text = "Google Drive",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(file.getFormattedSize(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                            }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Sign in to view your Google Drive documents",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
                         }
                     }
                 }
