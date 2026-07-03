@@ -29,6 +29,9 @@ class MainActivity : ComponentActivity() {
     // Clear cache asynchronously on startup to clean up leftover files
     clearCacheAsync()
 
+    // Pre-initialize Room database in background to avoid Main thread disk/IPC blockages
+    preInitializeDatabaseAsync()
+
     // Copy assets to filesDir on update/new install
     copyAssetsToFilesOnUpdate()
 
@@ -71,26 +74,36 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  private fun copyAssetsToFilesOnUpdate() {
-    val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
-    val currentVersionCode = try {
-      val pInfo = packageManager.getPackageInfo(packageName, 0)
-      if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-        pInfo.longVersionCode
-      } else {
-        @Suppress("DEPRECATION")
-        pInfo.versionCode.toLong()
+  private fun preInitializeDatabaseAsync() {
+    CoroutineScope(Dispatchers.IO).launch {
+      try {
+        AppDatabase.getDatabase(applicationContext)
+      } catch (e: Exception) {
+        // Ignore
       }
-    } catch (e: Exception) {
-      -1L
     }
+  }
 
-    val lastVersionCode = sharedPrefs.getLong("last_version_code", -1L)
+  private fun copyAssetsToFilesOnUpdate() {
+    CoroutineScope(Dispatchers.IO).launch {
+      try {
+        val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+        val currentVersionCode = try {
+          val pInfo = packageManager.getPackageInfo(packageName, 0)
+          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            pInfo.longVersionCode
+          } else {
+            @Suppress("DEPRECATION")
+            pInfo.versionCode.toLong()
+          }
+        } catch (e: Exception) {
+          -1L
+        }
 
-    // If it's a new install or update, copy/overwrite files from assets
-    if (currentVersionCode != lastVersionCode) {
-      CoroutineScope(Dispatchers.IO).launch {
-        try {
+        val lastVersionCode = sharedPrefs.getLong("last_version_code", -1L)
+
+        // If it's a new install or update, copy/overwrite files from assets
+        if (currentVersionCode != lastVersionCode) {
           assets.list("")?.forEach { assetName ->
             if (assetName.endsWith(".pdf") || assetName.endsWith(".txt") || assetName.endsWith(".md") || assetName.endsWith(".html")) {
               val outFile = File(filesDir, assetName)
@@ -102,9 +115,9 @@ class MainActivity : ComponentActivity() {
             }
           }
           sharedPrefs.edit().putLong("last_version_code", currentVersionCode).apply()
-        } catch (e: Exception) {
-          android.util.Log.e("MainActivity", "Error copying assets", e)
         }
+      } catch (e: Exception) {
+        android.util.Log.e("MainActivity", "Error copying assets", e)
       }
     }
   }
