@@ -1196,21 +1196,18 @@ fun PdfViewerScreen(
                         // Track
                         Box(
                             modifier = Modifier
-                                .align(Alignment.Center)
-                                .width(6.dp)
-                                .fillMaxHeight()
-                                .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(3.dp))
+                                .fillMaxSize()
+                                .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
                         )
                         // Thumb
                         Box(
                             modifier = Modifier
-                                .align(Alignment.Center)
-                                .width(6.dp)
-                                .fillMaxHeight(0.08f) // Thumb height is 8% of track height
+                                .fillMaxWidth()
+                                .fillMaxHeight(0.15f) // Thumb height is 15% of track height
                                 .graphicsLayer {
-                                    translationY = (trackHeight - scrollbarPaddingPx) * 0.92f * scrollFraction
+                                    translationY = (trackHeight - scrollbarPaddingPx) * 0.85f * scrollFraction
                                 }
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(3.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                         )
                     }
                 } else if (!isVerticalScroll && totalItems > 1 && scrollbarAlpha > 0f) {
@@ -1253,21 +1250,18 @@ fun PdfViewerScreen(
                         // Track
                         Box(
                             modifier = Modifier
-                                .align(Alignment.Center)
-                                .height(6.dp)
-                                .fillMaxWidth()
-                                .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(3.dp))
+                                .fillMaxSize()
+                                .background(Color.Gray.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
                         )
                         // Thumb
                         Box(
                             modifier = Modifier
-                                .align(Alignment.Center)
-                                .height(6.dp)
-                                .fillMaxWidth(0.08f) // Thumb width is 8% of track width
+                                .fillMaxHeight()
+                                .fillMaxWidth(0.15f) // Thumb width is 15% of track width
                                 .graphicsLayer {
-                                    translationX = (trackWidth - scrollbarPaddingPx) * 0.92f * scrollFraction
+                                    translationX = (trackWidth - scrollbarPaddingPx) * 0.85f * scrollFraction
                                 }
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(3.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                         )
                     }
                 }

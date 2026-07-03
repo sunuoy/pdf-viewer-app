@@ -706,6 +706,15 @@ fun HomeScreen(
                     }
                 } finally {
                     isProcessing = false
+                    withContext(Dispatchers.IO) {
+                        context.cacheDir.listFiles()?.forEach { file ->
+                            if (file.name.startsWith("temp_editor_input_") ||
+                                file.name.startsWith("temp_img_") ||
+                                file.name.startsWith("temp_merge_")) {
+                                try { file.delete() } catch (e: java.lang.Exception) {}
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -716,29 +725,55 @@ fun HomeScreen(
     ) { uri: Uri? ->
         uri?.let { inputUri ->
             val tool = activeTool ?: return@let
-            selectedInputUri = inputUri
-            val originalName = getFileName(context, inputUri) ?: "document.pdf"
-            val baseName = originalName.substringBeforeLast(".")
-            val suggestedName = when (tool) {
-                EditorTool.PDF_TO_IMAGE -> "${baseName}_images.zip"
-                EditorTool.PDF_TO_TEXT -> "${baseName}.txt"
-                EditorTool.PDF_TO_WORD -> "${baseName}.doc"
-                EditorTool.COMPRESS_PDF -> "${baseName}_compressed.pdf"
-                EditorTool.SPLIT_PDF -> "${baseName}_split.pdf"
-                EditorTool.ROTATE_PDF -> "${baseName}_rotated.pdf"
-                EditorTool.ZIP_TO_PDF -> "${baseName}.pdf"
-                else -> "${baseName}_edited.pdf"
-            }
-            if (tool == EditorTool.SPLIT_PDF) {
-                showSplitPreviewDialog = true
-            } else if (tool == EditorTool.COMPRESS_PDF) {
-                showCompressDialog = true
-            } else if (tool == EditorTool.ROTATE_PDF) {
-                showRotateDialog = true
-            } else if (tool == EditorTool.PDF_TO_IMAGE) {
-                showPdfToImageDialog = true
-            } else {
-                saveEditorFileLauncher.launch(suggestedName)
+            isProcessing = true
+            processingMessage = "Loading file..."
+            scope.launch {
+                try {
+                    val originalName = getFileName(context, inputUri) ?: "document.pdf"
+                    val baseName = originalName.substringBeforeLast(".")
+                    val suggestedName = when (tool) {
+                        EditorTool.PDF_TO_IMAGE -> "${baseName}_images.zip"
+                        EditorTool.PDF_TO_TEXT -> "${baseName}.txt"
+                        EditorTool.PDF_TO_WORD -> "${baseName}.doc"
+                        EditorTool.COMPRESS_PDF -> "${baseName}_compressed.pdf"
+                        EditorTool.SPLIT_PDF -> "${baseName}_split.pdf"
+                        EditorTool.ROTATE_PDF -> "${baseName}_rotated.pdf"
+                        EditorTool.ZIP_TO_PDF -> "${baseName}.pdf"
+                        else -> "${baseName}_edited.pdf"
+                    }
+
+                    val cachedUri = withContext(Dispatchers.IO) {
+                        val suffix = if (tool == EditorTool.ZIP_TO_PDF) ".zip" else ".pdf"
+                        val tempFile = File(context.cacheDir, "temp_editor_input_${System.currentTimeMillis()}$suffix")
+                        if (tempFile.exists()) tempFile.delete()
+                        context.contentResolver.openInputStream(inputUri)?.use { input ->
+                            tempFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        val authority = "com.pdfviewerapp.sunuy.fileprovider"
+                        androidx.core.content.FileProvider.getUriForFile(context, authority, tempFile)
+                    }
+
+                    selectedInputUri = cachedUri
+
+                    if (tool == EditorTool.SPLIT_PDF) {
+                        showSplitPreviewDialog = true
+                    } else if (tool == EditorTool.COMPRESS_PDF) {
+                        showCompressDialog = true
+                    } else if (tool == EditorTool.ROTATE_PDF) {
+                        showRotateDialog = true
+                    } else if (tool == EditorTool.PDF_TO_IMAGE) {
+                        showPdfToImageDialog = true
+                    } else {
+                        saveEditorFileLauncher.launch(suggestedName)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("HomeScreen", "Error preparing input file", e)
+                    Toast.makeText(context, "Failed to load file: ${e.message}", Toast.LENGTH_LONG).show()
+                } finally {
+                    isProcessing = false
+                }
             }
         }
     }
@@ -777,9 +812,18 @@ fun HomeScreen(
                     }
                 } finally {
                     for (stream in inputStreams) {
-                        try { stream.close() } catch (e: Exception) {}
+                        try { stream.close() } catch (e: java.lang.Exception) {}
                     }
                     isProcessing = false
+                    withContext(Dispatchers.IO) {
+                        context.cacheDir.listFiles()?.forEach { file ->
+                            if (file.name.startsWith("temp_editor_input_") ||
+                                file.name.startsWith("temp_img_") ||
+                                file.name.startsWith("temp_merge_")) {
+                                try { file.delete() } catch (e: java.lang.Exception) {}
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -792,9 +836,33 @@ fun HomeScreen(
             if (uris.size < 2) {
                 Toast.makeText(context, "Please select 2 or more PDF files to merge.", Toast.LENGTH_LONG).show()
             } else {
-                mergeReorderList.clear()
-                mergeReorderList.addAll(uris)
-                showMergeReorderDialog = true
+                isProcessing = true
+                processingMessage = "Preparing PDF files..."
+                scope.launch {
+                    try {
+                        val tempUris = withContext(Dispatchers.IO) {
+                            uris.mapIndexed { index, uri ->
+                                val tempFile = File(context.cacheDir, "temp_merge_${index}_${System.currentTimeMillis()}.pdf")
+                                if (tempFile.exists()) tempFile.delete()
+                                context.contentResolver.openInputStream(uri)?.use { input ->
+                                    tempFile.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                val authority = "com.pdfviewerapp.sunuy.fileprovider"
+                                androidx.core.content.FileProvider.getUriForFile(context, authority, tempFile)
+                            }
+                        }
+                        mergeReorderList.clear()
+                        mergeReorderList.addAll(tempUris)
+                        showMergeReorderDialog = true
+                    } catch (e: Exception) {
+                        android.util.Log.e("HomeScreen", "Error preparing files for merge", e)
+                        Toast.makeText(context, "Failed to load files: ${e.message}", Toast.LENGTH_LONG).show()
+                    } finally {
+                        isProcessing = false
+                    }
+                }
             }
         }
     }
@@ -851,6 +919,15 @@ fun HomeScreen(
                     }
                 } finally {
                     isProcessing = false
+                    withContext(Dispatchers.IO) {
+                        context.cacheDir.listFiles()?.forEach { file ->
+                            if (file.name.startsWith("temp_editor_input_") ||
+                                file.name.startsWith("temp_img_") ||
+                                file.name.startsWith("temp_merge_")) {
+                                try { file.delete() } catch (e: java.lang.Exception) {}
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -860,9 +937,33 @@ fun HomeScreen(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            selectedImageUrisForPdf.clear()
-            selectedImageUrisForPdf.addAll(uris)
-            saveImagesToPdfLauncher.launch("images_compiled.pdf")
+            isProcessing = true
+            processingMessage = "Preparing images..."
+            scope.launch {
+                try {
+                    val tempUris = withContext(Dispatchers.IO) {
+                        uris.mapIndexed { index, uri ->
+                            val tempFile = File(context.cacheDir, "temp_img_${index}_${System.currentTimeMillis()}.jpg")
+                            if (tempFile.exists()) tempFile.delete()
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                tempFile.outputStream().use { output ->
+                                    input.copyTo(output)
+                                }
+                            }
+                            val authority = "com.pdfviewerapp.sunuy.fileprovider"
+                            androidx.core.content.FileProvider.getUriForFile(context, authority, tempFile)
+                        }
+                    }
+                    selectedImageUrisForPdf.clear()
+                    selectedImageUrisForPdf.addAll(tempUris)
+                    saveImagesToPdfLauncher.launch("images_compiled.pdf")
+                } catch (e: Exception) {
+                    android.util.Log.e("HomeScreen", "Error preparing images", e)
+                    Toast.makeText(context, "Failed to load images: ${e.message}", Toast.LENGTH_LONG).show()
+                } finally {
+                    isProcessing = false
+                }
+            }
         }
     }
     
