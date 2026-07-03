@@ -27,6 +27,22 @@ data class PageTextAndPositions(
 
 class PdfTextService {
 
+    private fun openInputStream(context: Context, uri: Uri): InputStream? {
+        return if (uri.scheme == "file") {
+            java.io.FileInputStream(java.io.File(uri.path ?: ""))
+        } else {
+            context.contentResolver.openInputStream(uri)
+        }
+    }
+
+    private fun openOutputStream(context: Context, uri: Uri): java.io.OutputStream? {
+        return if (uri.scheme == "file") {
+            java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+        } else {
+            context.contentResolver.openOutputStream(uri, "rwt") ?: context.contentResolver.openOutputStream(uri)
+        }
+    }
+
     private val textCache = ConcurrentHashMap<String, MutableMap<Int, String>>()
     private val positionCache = ConcurrentHashMap<String, ConcurrentHashMap<Int, PageTextAndPositions>>()
 
@@ -49,7 +65,7 @@ class PdfTextService {
         var document: PDDocument? = null
         var inputStream: InputStream? = null
         try {
-            inputStream = context.contentResolver.openInputStream(uri)
+            inputStream = openInputStream(context, uri)
             if (inputStream == null) return@withContext PageTextAndPositions("", emptyList())
             document = PDDocument.load(inputStream)
             if (pageIndex < 0 || pageIndex >= document.numberOfPages) return@withContext PageTextAndPositions("", emptyList())
@@ -170,7 +186,7 @@ class PdfTextService {
         var document: PDDocument? = null
         var inputStream: InputStream? = null
         try {
-            inputStream = context.contentResolver.openInputStream(uri)
+            inputStream = openInputStream(context, uri)
             if (inputStream == null) return@withContext ""
             document = PDDocument.load(inputStream)
             if (pageIndex < 0 || pageIndex >= document.numberOfPages) return@withContext ""
@@ -206,7 +222,7 @@ class PdfTextService {
         val uriStr = uri.toString()
         
         try {
-            inputStream = context.contentResolver.openInputStream(uri)
+            inputStream = openInputStream(context, uri)
             if (inputStream == null) return@withContext emptyList()
             document = PDDocument.load(inputStream)
             
@@ -336,7 +352,7 @@ class PdfTextService {
         val tempFile = java.io.File(context.cacheDir, "temp_edit_${System.currentTimeMillis()}.pdf")
         
         try {
-            inputStream = context.contentResolver.openInputStream(uri)
+            inputStream = openInputStream(context, uri)
             if (inputStream == null) return@withContext false
             document = PDDocument.load(inputStream)
             if (pageIndex < 0 || pageIndex >= document.numberOfPages) return@withContext false
@@ -478,7 +494,7 @@ class PdfTextService {
             // Copy back to original uri
             var outputStream: java.io.OutputStream? = null
             try {
-                outputStream = context.contentResolver.openOutputStream(uri, "rwt") ?: context.contentResolver.openOutputStream(uri)
+                outputStream = openOutputStream(context, uri)
                 if (outputStream != null) {
                     tempFile.inputStream().use { input ->
                         input.copyTo(outputStream)

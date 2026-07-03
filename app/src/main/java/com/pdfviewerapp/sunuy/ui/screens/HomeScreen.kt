@@ -72,6 +72,9 @@ import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.asImageBitmap
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -101,6 +104,17 @@ fun HomeScreen(
     var mergeReorderList = remember { mutableStateListOf<Uri>() }
     var showMergeReorderDialog by remember { mutableStateOf(false) }
     var mergedFileUri by remember { mutableStateOf<Uri?>(null) }
+    
+    // Split PDF State
+    var showSplitPreviewDialog by remember { mutableStateOf(false) }
+    val selectedPagesToSplit = remember { mutableStateListOf<Int>() }
+    val splitPageBitmaps = remember { mutableStateListOf<Bitmap?>() }
+    var splitPageCount by remember { mutableStateOf(0) }
+    var isSplitLoading by remember { mutableStateOf(false) }
+
+    // Compress PDF State
+    var showCompressDialog by remember { mutableStateOf(false) }
+    var compressionPercentage by remember { mutableStateOf(50) }
     var isMenuExpanded by remember { mutableStateOf(false) }
     var isGoogleDriveConnected by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.isLoggedIn(context)) }
     var googleDriveEmail by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.getEmail(context)) }
@@ -133,6 +147,59 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             PdfTextService.init(context)
+        }
+    }
+
+    LaunchedEffect(showSplitPreviewDialog, selectedInputUri) {
+        if (showSplitPreviewDialog && selectedInputUri != null) {
+            isSplitLoading = true
+            splitPageBitmaps.clear()
+            selectedPagesToSplit.clear()
+            withContext(Dispatchers.IO) {
+                try {
+                    val pfd = if (selectedInputUri!!.scheme == "file") {
+                        android.os.ParcelFileDescriptor.open(java.io.File(selectedInputUri!!.path ?: ""), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                    } else {
+                        context.contentResolver.openFileDescriptor(selectedInputUri!!, "r")
+                    }
+                    if (pfd != null) {
+                        val renderer = PdfRenderer(pfd)
+                        val count = renderer.pageCount
+                        splitPageCount = count
+                        
+                        // Default select all pages
+                        for (i in 0 until count) {
+                            selectedPagesToSplit.add(i)
+                            splitPageBitmaps.add(null) // placeholder
+                        }
+                        
+                        // Load small thumbnails
+                        for (i in 0 until count) {
+                            try {
+                                val page = renderer.openPage(i)
+                                // scale down to width of 200px for thumbnail preview
+                                val targetWidth = 200
+                                val targetHeight = (targetWidth * (page.height.toFloat() / page.width.toFloat())).toInt()
+                                val bmp = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                                bmp.eraseColor(android.graphics.Color.WHITE)
+                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                page.close()
+                                withContext(Dispatchers.Main) {
+                                    splitPageBitmaps[i] = bmp
+                                }
+                            } catch (e: java.lang.Exception) {
+                                android.util.Log.e("HomeScreen", "Error rendering thumbnail $i", e)
+                            }
+                        }
+                        renderer.close()
+                        pfd.close()
+                    }
+                } catch (e: java.lang.Exception) {
+                    android.util.Log.e("HomeScreen", "Error loading pdf for split", e)
+                } finally {
+                    isSplitLoading = false
+                }
+            }
         }
     }
     
@@ -298,22 +365,108 @@ fun HomeScreen(
                         EditorTool.COMPRESS_PDF -> {
                             processingMessage = "Optimizing and compressing PDF..."
                             withContext(Dispatchers.IO) {
-                                context.contentResolver.openInputStream(inputUri)?.use { input ->
-                                    context.contentResolver.openOutputStream(targetUri)?.use { output ->
-                                        input.copyTo(output)
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
                                     }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+
+                                openInputStream(inputUri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input)
+                                    
+                                    // Compress images in the document based on target percentage
+                                    val quality = (100 - compressionPercentage).coerceIn(5, 95)
+                                    
+                                    fun compressResources(resources: com.tom_roush.pdfbox.pdmodel.PDResources?) {
+                                        if (resources == null) return
+                                        for (name in resources.xObjectNames) {
+                                            if (resources.isImageXObject(name)) {
+                                                try {
+                                                    val xobject = resources.getXObject(name)
+                                                    if (xobject is com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject) {
+                                                        val bmp = xobject.image
+                                                        if (bmp != null) {
+                                                            val compressedBao = java.io.ByteArrayOutputStream()
+                                                            bmp.compress(Bitmap.CompressFormat.JPEG, quality, compressedBao)
+                                                            val compressedBytes = compressedBao.toByteArray()
+                                                            
+                                                            // Create new image from stream
+                                                            val newImageXObject = com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory.createFromStream(
+                                                                document,
+                                                                java.io.ByteArrayInputStream(compressedBytes)
+                                                            )
+                                                            resources.put(name, newImageXObject)
+                                                        }
+                                                    }
+                                                } catch (e: Exception) {
+                                                    android.util.Log.e("HomeScreen", "Error compressing image $name", e)
+                                                }
+                                            } else {
+                                                try {
+                                                    val xobject = resources.getXObject(name)
+                                                    if (xobject is com.tom_roush.pdfbox.pdmodel.graphics.form.PDFormXObject) {
+                                                        compressResources(xobject.resources)
+                                                    }
+                                                } catch (e: Exception) {
+                                                    // Ignore non-form xobjects
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    for (page in document.pages) {
+                                        compressResources(page.resources)
+                                    }
+
+                                    openOutputStream(targetUri)?.use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
                                 }
                                 processedFileUri = targetUri
                                 generatedMimeType = "application/pdf"
                             }
                         }
                         EditorTool.SPLIT_PDF -> {
-                            processingMessage = "Splitting document into single pages..."
+                            processingMessage = "Extracting selected pages..."
                             withContext(Dispatchers.IO) {
-                                context.contentResolver.openInputStream(inputUri)?.use { input ->
-                                    context.contentResolver.openOutputStream(targetUri)?.use { output ->
-                                        input.copyTo(output)
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
                                     }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+
+                                openInputStream(inputUri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input)
+                                    val totalPages = document.numberOfPages
+                                    // Remove pages in reverse order
+                                    for (i in (totalPages - 1) downTo 0) {
+                                        if (i !in selectedPagesToSplit) {
+                                            document.removePage(i)
+                                        }
+                                    }
+                                    openOutputStream(targetUri)?.use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
                                 }
                                 processedFileUri = targetUri
                                 generatedMimeType = "application/pdf"
@@ -363,7 +516,13 @@ fun HomeScreen(
                 EditorTool.ROTATE_PDF -> "${baseName}_rotated.pdf"
                 else -> "${baseName}_edited.pdf"
             }
-            saveEditorFileLauncher.launch(suggestedName)
+            if (tool == EditorTool.SPLIT_PDF) {
+                showSplitPreviewDialog = true
+            } else if (tool == EditorTool.COMPRESS_PDF) {
+                showCompressDialog = true
+            } else {
+                saveEditorFileLauncher.launch(suggestedName)
+            }
         }
     }
 
@@ -1269,15 +1428,265 @@ fun HomeScreen(
                     Text("Merge & Save")
                 }
             },
+        )
+    }
+
+    // Split Preview Dialog
+    if (showSplitPreviewDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showSplitPreviewDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Column {
+                    Text("Select Pages to Split", fontWeight = FontWeight.Bold)
+                    Text(
+                        originalName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (isSplitLoading && splitPageCount == 0) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(200.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    } else {
+                        // Select all / None buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    selectedPagesToSplit.clear()
+                                    for (i in 0 until splitPageCount) {
+                                        selectedPagesToSplit.add(i)
+                                    }
+                                }
+                            ) {
+                                Text("Select All")
+                            }
+                            TextButton(
+                                onClick = {
+                                    selectedPagesToSplit.clear()
+                                }
+                            ) {
+                                Text("Deselect All")
+                            }
+                        }
+
+                        Text(
+                            text = "${selectedPagesToSplit.size} of $splitPageCount pages selected",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        // Grid of page thumbnails
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp)
+                        ) {
+                            items(splitPageCount) { index ->
+                                val isSelected = selectedPagesToSplit.contains(index)
+                                val thumbnail = splitPageBitmaps.getOrNull(index)
+
+                                Card(
+                                    onClick = {
+                                        if (isSelected) {
+                                            selectedPagesToSplit.remove(index)
+                                        } else {
+                                            selectedPagesToSplit.add(index)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(80.dp)
+                                                .background(Color.White, RoundedCornerShape(4.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (thumbnail != null) {
+                                                Image(
+                                                    bitmap = thumbnail.asImageBitmap(),
+                                                    contentDescription = "Page ${index + 1}",
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Checkbox(
+                                                checked = isSelected,
+                                                onCheckedChange = { checked ->
+                                                    if (checked) {
+                                                        if (!selectedPagesToSplit.contains(index)) selectedPagesToSplit.add(index)
+                                                    } else {
+                                                        selectedPagesToSplit.remove(index)
+                                                    }
+                                                },
+                                                modifier = Modifier.scale(0.8f).size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "${index + 1}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (selectedPagesToSplit.isEmpty()) {
+                            Toast.makeText(context, "Please select at least 1 page to split.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val baseName = originalName.substringBeforeLast(".")
+                            showSplitPreviewDialog = false
+                            saveEditorFileLauncher.launch("${baseName}_split.pdf")
+                        }
+                    },
+                    enabled = selectedPagesToSplit.isNotEmpty()
+                ) {
+                    Text("Split & Save")
+                }
+            },
             dismissButton = {
-                TextButton(onClick = { showMergeReorderDialog = false }) {
+                TextButton(
+                    onClick = {
+                        showSplitPreviewDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
                     Text("Cancel")
                 }
             }
         )
     }
 
-
+    // Compress Dialog
+    if (showCompressDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showCompressDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Text("Compress PDF", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = originalName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    
+                    Text(
+                        text = "How much would you like to compress this PDF?",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Compression Ratio:", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = "${compressionPercentage}%",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    
+                    Slider(
+                        value = compressionPercentage.toFloat(),
+                        onValueChange = { compressionPercentage = it.toInt() },
+                        valueRange = 10f..90f,
+                        steps = 7, // 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    )
+                    
+                    val compressionText = when {
+                        compressionPercentage <= 30 -> "Low Compression (Best Quality)"
+                        compressionPercentage <= 60 -> "Medium Compression (Balanced)"
+                        else -> "High Compression (Smallest File Size)"
+                    }
+                    
+                    Text(
+                        text = compressionText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val baseName = originalName.substringBeforeLast(".")
+                        showCompressDialog = false
+                        saveEditorFileLauncher.launch("${baseName}_compressed.pdf")
+                    }
+                ) {
+                    Text("Compress & Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showCompressDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     // Settings Dialog
     if (showSettingsDialog) {

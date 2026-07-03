@@ -409,9 +409,13 @@ fun PdfViewerScreen(
                 
                 if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") || lowerName.endsWith(".html") || lowerName.endsWith(".htm")) {
                     isTextDocument = true
-                    val content = context.contentResolver.openInputStream(uri)?.use { input ->
-                        input.bufferedReader(Charsets.UTF_8).readText()
-                    } ?: ""
+                    val content = if (uri.scheme == "file") {
+                        File(uri.path ?: "").readText(Charsets.UTF_8)
+                    } else {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            input.bufferedReader(Charsets.UTF_8).readText()
+                        } ?: ""
+                    }
                     textDocumentContent = content
                     pageCount = 1
                 } else {
@@ -421,7 +425,11 @@ fun PdfViewerScreen(
                     } catch (e: Exception) {
                         // Ignore
                     }
-                    val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+                    val pfd = if (uri.scheme == "file") {
+                        ParcelFileDescriptor.open(File(uri.path ?: ""), ParcelFileDescriptor.MODE_READ_ONLY)
+                    } else {
+                        context.contentResolver.openFileDescriptor(uri, "r")
+                    }
                     if (pfd != null) {
                         parcelFileDescriptor = pfd
                         val renderer = PdfRenderer(pfd)
@@ -2017,8 +2025,12 @@ fun PdfViewerScreen(
                                             try {
                                                 withContext(Dispatchers.IO) {
                                                     val uri = Uri.parse(pdfPath)
-                                                    context.contentResolver.openOutputStream(uri, "rwt")?.use { output ->
-                                                        output.write(editorContent.toByteArray(Charsets.UTF_8))
+                                                    if (uri.scheme == "file") {
+                                                        File(uri.path ?: "").writeText(editorContent, Charsets.UTF_8)
+                                                    } else {
+                                                        context.contentResolver.openOutputStream(uri, "rwt")?.use { output ->
+                                                            output.write(editorContent.toByteArray(Charsets.UTF_8))
+                                                        }
                                                     }
                                                 }
                                                 textDocumentContent = editorContent
@@ -2461,9 +2473,15 @@ suspend fun renderPageToBitmap(
  */
 fun sharePdf(context: Context, uri: Uri) {
     try {
+        val shareUri = if (uri.scheme == "file") {
+            val file = File(uri.path ?: "")
+            androidx.core.content.FileProvider.getUriForFile(context, "com.pdfviewerapp.sunuy.fileprovider", file)
+        } else {
+            uri
+        }
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
-            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_STREAM, shareUri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(shareIntent, "Share PDF File"))
