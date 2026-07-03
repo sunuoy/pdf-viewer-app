@@ -11,6 +11,8 @@ import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -1133,13 +1135,27 @@ fun PdfViewerScreen(
                     }
                 }
 
-                if (isVerticalScroll && totalItems > 1) {
+                // Autohide / sleep scrollbar logic
+                var showScrollbar by remember { mutableStateOf(false) }
+                LaunchedEffect(firstVisibleItem, firstVisibleOffset) {
+                    showScrollbar = true
+                    kotlinx.coroutines.delay(2000L)
+                    showScrollbar = false
+                }
+
+                val scrollbarAlpha by animateFloatAsState(
+                    targetValue = if (showScrollbar) 1f else 0f,
+                    animationSpec = tween(durationMillis = 300)
+                )
+
+                if (isVerticalScroll && totalItems > 1 && scrollbarAlpha > 0f) {
                     var trackHeight by remember { mutableStateOf(1f) }
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .fillMaxHeight()
                             .width(36.dp) // Touch-friendly target area
+                            .graphicsLayer { alpha = scrollbarAlpha }
                             .onGloballyPositioned { coordinates ->
                                 trackHeight = coordinates.size.height.toFloat()
                             }
@@ -1181,13 +1197,14 @@ fun PdfViewerScreen(
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                         )
                     }
-                } else if (!isVerticalScroll && totalItems > 1) {
+                } else if (!isVerticalScroll && totalItems > 1 && scrollbarAlpha > 0f) {
                     var trackWidth by remember { mutableStateOf(1f) }
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .height(36.dp) // Touch-friendly target area
+                            .graphicsLayer { alpha = scrollbarAlpha }
                             .onGloballyPositioned { coordinates ->
                                 trackWidth = coordinates.size.width.toFloat()
                             }

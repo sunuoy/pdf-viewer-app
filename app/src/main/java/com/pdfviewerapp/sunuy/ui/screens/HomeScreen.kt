@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.History
@@ -132,6 +133,9 @@ fun HomeScreen(
     val pdfToImagePageBitmaps = remember { mutableStateListOf<Bitmap?>() }
     var pdfToImagePageCount by remember { mutableStateOf(0) }
     var isPdfToImageLoading by remember { mutableStateOf(false) }
+
+    // Images to PDF State
+    val selectedImageUrisForPdf = remember { mutableStateListOf<Uri>() }
     var isMenuExpanded by remember { mutableStateOf(false) }
     var isGoogleDriveConnected by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.isLoggedIn(context)) }
     var googleDriveEmail by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.getEmail(context)) }
@@ -641,6 +645,53 @@ fun HomeScreen(
                                     }
                                     document.close()
                                 }
+                                 processedFileUri = targetUri
+                                generatedMimeType = "application/pdf"
+                            }
+                        }
+                        EditorTool.ZIP_TO_PDF -> {
+                            processingMessage = "Compiling zip images to PDF..."
+                            withContext(Dispatchers.IO) {
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
+                                    }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+
+                                val document = com.tom_roush.pdfbox.pdmodel.PDDocument()
+                                openInputStream(inputUri)?.use { zipInput ->
+                                    java.util.zip.ZipInputStream(zipInput).use { zis ->
+                                        var entry = zis.nextEntry
+                                        while (entry != null) {
+                                            if (!entry.isDirectory && (entry.name.lowercase().endsWith(".png") || entry.name.lowercase().endsWith(".jpg") || entry.name.lowercase().endsWith(".jpeg") || entry.name.lowercase().endsWith(".webp"))) {
+                                                val bytes = zis.readBytes()
+                                                val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                                if (bitmap != null) {
+                                                    val page = com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(bitmap.width.toFloat(), bitmap.height.toFloat()))
+                                                    document.addPage(page)
+                                                    val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
+                                                    val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(document, page)
+                                                    contentStream.drawImage(pdImage, 0f, 0f)
+                                                    contentStream.close()
+                                                }
+                                            }
+                                            entry = zis.nextEntry
+                                        }
+                                    }
+                                }
+                                openOutputStream(targetUri)?.use { output ->
+                                    document.save(output)
+                                }
+                                document.close()
                                 processedFileUri = targetUri
                                 generatedMimeType = "application/pdf"
                             }
@@ -675,6 +726,7 @@ fun HomeScreen(
                 EditorTool.COMPRESS_PDF -> "${baseName}_compressed.pdf"
                 EditorTool.SPLIT_PDF -> "${baseName}_split.pdf"
                 EditorTool.ROTATE_PDF -> "${baseName}_rotated.pdf"
+                EditorTool.ZIP_TO_PDF -> "${baseName}.pdf"
                 else -> "${baseName}_edited.pdf"
             }
             if (tool == EditorTool.SPLIT_PDF) {
@@ -744,6 +796,73 @@ fun HomeScreen(
                 mergeReorderList.addAll(uris)
                 showMergeReorderDialog = true
             }
+        }
+    }
+
+    val saveImagesToPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri: Uri? ->
+        uri?.let { destUri ->
+            isProcessing = true
+            processingMessage = "Compiling images to PDF..."
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        val document = com.tom_roush.pdfbox.pdmodel.PDDocument()
+                        val openInputStream = { u: Uri ->
+                            if (u.scheme == "file") {
+                                java.io.FileInputStream(java.io.File(u.path ?: ""))
+                            } else {
+                                context.contentResolver.openInputStream(u)
+                            }
+                        }
+                        for (imgUri in selectedImageUrisForPdf) {
+                            openInputStream(imgUri)?.use { stream ->
+                                val bitmap = android.graphics.BitmapFactory.decodeStream(stream)
+                                if (bitmap != null) {
+                                    val page = com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(bitmap.width.toFloat(), bitmap.height.toFloat()))
+                                    document.addPage(page)
+                                    val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
+                                    val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(document, page)
+                                    contentStream.drawImage(pdImage, 0f, 0f)
+                                    contentStream.close()
+                                }
+                            }
+                        }
+                        val openOutputStream = { u: Uri ->
+                            if (u.scheme == "file") {
+                                java.io.FileOutputStream(java.io.File(u.path ?: ""))
+                            } else {
+                                context.contentResolver.openOutputStream(u)
+                            }
+                        }
+                        openOutputStream(destUri)?.use { out ->
+                            document.save(out)
+                        }
+                        document.close()
+                    }
+                    processedFileUri = destUri
+                    generatedMimeType = "application/pdf"
+                    showSuccessDialog = true
+                } catch (e: Exception) {
+                    android.util.Log.e("HomeScreen", "Error compiling images to PDF", e)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Images compilation failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    isProcessing = false
+                }
+            }
+        }
+    }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            selectedImageUrisForPdf.clear()
+            selectedImageUrisForPdf.addAll(uris)
+            saveImagesToPdfLauncher.launch("images_compiled.pdf")
         }
     }
     
@@ -1347,6 +1466,20 @@ fun HomeScreen(
                         description = "Adjust document page rotation",
                         icon = Icons.Default.RotateRight,
                         gradientColors = listOf(Color(0xFFD81B60), Color(0xFFF48FB1))
+                    ),
+                    EditorToolItem(
+                        tool = EditorTool.ZIP_TO_PDF,
+                        title = "Zip to PDF",
+                        description = "Compile images in zip to PDF",
+                        icon = Icons.Default.Archive,
+                        gradientColors = listOf(Color(0xFF8E24AA), Color(0xFFE1BEE7))
+                    ),
+                    EditorToolItem(
+                        tool = EditorTool.IMAGES_TO_PDF,
+                        title = "Images to PDF",
+                        description = "Compile multiple images to PDF",
+                        icon = Icons.Default.CropOriginal,
+                        gradientColors = listOf(Color(0xFF00ACC1), Color(0xFFB2EBF2))
                     )
                 )
                 
@@ -1361,6 +1494,12 @@ fun HomeScreen(
                             onClick = {
                                 if (item.tool == EditorTool.MERGE_PDFS) {
                                     mergePickerLauncher.launch(arrayOf("application/pdf"))
+                                } else if (item.tool == EditorTool.IMAGES_TO_PDF) {
+                                    activeTool = item.tool
+                                    imagePickerLauncher.launch(arrayOf("image/*"))
+                                } else if (item.tool == EditorTool.ZIP_TO_PDF) {
+                                    activeTool = item.tool
+                                    editorFilePickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
                                 } else {
                                     activeTool = item.tool
                                     editorFilePickerLauncher.launch(arrayOf("application/pdf"))
@@ -2483,7 +2622,9 @@ enum class EditorTool {
     MERGE_PDFS,
     SPLIT_PDF,
     COMPRESS_PDF,
-    ROTATE_PDF
+    ROTATE_PDF,
+    ZIP_TO_PDF,
+    IMAGES_TO_PDF
 }
 
 data class EditorToolItem(
