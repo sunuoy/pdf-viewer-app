@@ -125,6 +125,13 @@ fun HomeScreen(
     val rotatePageBitmaps = remember { mutableStateListOf<Bitmap?>() }
     var rotatePageCount by remember { mutableStateOf(0) }
     var isRotateLoading by remember { mutableStateOf(false) }
+
+    // PDF to Image State
+    var showPdfToImageDialog by remember { mutableStateOf(false) }
+    val selectedPagesToImage = remember { mutableStateListOf<Int>() }
+    val pdfToImagePageBitmaps = remember { mutableStateListOf<Bitmap?>() }
+    var pdfToImagePageCount by remember { mutableStateOf(0) }
+    var isPdfToImageLoading by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
     var isGoogleDriveConnected by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.isLoggedIn(context)) }
     var googleDriveEmail by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.getEmail(context)) }
@@ -264,6 +271,58 @@ fun HomeScreen(
             }
         }
     }
+
+    LaunchedEffect(showPdfToImageDialog, selectedInputUri) {
+        if (showPdfToImageDialog && selectedInputUri != null) {
+            isPdfToImageLoading = true
+            pdfToImagePageBitmaps.clear()
+            selectedPagesToImage.clear()
+            withContext(Dispatchers.IO) {
+                try {
+                    val pfd = if (selectedInputUri!!.scheme == "file") {
+                        android.os.ParcelFileDescriptor.open(java.io.File(selectedInputUri!!.path ?: ""), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                    } else {
+                        context.contentResolver.openFileDescriptor(selectedInputUri!!, "r")
+                    }
+                    if (pfd != null) {
+                        val renderer = PdfRenderer(pfd)
+                        val count = renderer.pageCount
+                        pdfToImagePageCount = count
+                        
+                        // Default select all pages to convert
+                        for (i in 0 until count) {
+                            selectedPagesToImage.add(i)
+                            pdfToImagePageBitmaps.add(null) // placeholder
+                        }
+                        
+                        // Load small thumbnails
+                        for (i in 0 until count) {
+                            try {
+                                val page = renderer.openPage(i)
+                                val targetWidth = 200
+                                val targetHeight = (targetWidth * (page.height.toFloat() / page.width.toFloat())).toInt()
+                                val bmp = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                                bmp.eraseColor(android.graphics.Color.WHITE)
+                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                page.close()
+                                withContext(Dispatchers.Main) {
+                                    pdfToImagePageBitmaps[i] = bmp
+                                }
+                            } catch (e: java.lang.Exception) {
+                                android.util.Log.e("HomeScreen", "Error rendering pdfToImage thumbnail $i", e)
+                            }
+                        }
+                        renderer.close()
+                        pfd.close()
+                    }
+                } catch (e: java.lang.Exception) {
+                    android.util.Log.e("HomeScreen", "Error loading pdf for pdfToImage", e)
+                } finally {
+                    isPdfToImageLoading = false
+                }
+            }
+        }
+    }
     
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -308,32 +367,45 @@ fun HomeScreen(
                         EditorTool.PDF_TO_IMAGE -> {
                             processingMessage = "Rendering PDF pages to images..."
                             withContext(Dispatchers.IO) {
-                                val pfd = context.contentResolver.openFileDescriptor(inputUri, "r")
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+                                val pfd = if (inputUri.scheme == "file") {
+                                    android.os.ParcelFileDescriptor.open(java.io.File(inputUri.path ?: ""), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                                } else {
+                                    context.contentResolver.openFileDescriptor(inputUri, "r")
+                                }
                                 if (pfd != null) {
                                     val renderer = PdfRenderer(pfd)
                                     val imageFolder = File(context.cacheDir, "pdf_pages_${System.currentTimeMillis()}")
                                     imageFolder.mkdirs()
                                     val imageFiles = mutableListOf<File>()
                                     for (i in 0 until renderer.pageCount) {
-                                        val page = renderer.openPage(i)
-                                        val width = page.width * 2
-                                        val height = page.height * 2
-                                        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                                        bitmap.eraseColor(android.graphics.Color.WHITE)
-                                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                        page.close()
-                                        
-                                        val pageFile = File(imageFolder, "page_${i + 1}.png")
-                                        FileOutputStream(pageFile).use { out ->
-                                            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                                        if (i in selectedPagesToImage) {
+                                            val page = renderer.openPage(i)
+                                            val width = page.width * 2
+                                            val height = page.height * 2
+                                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                                            bitmap.eraseColor(android.graphics.Color.WHITE)
+                                            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                            page.close()
+                                            
+                                            val pageFile = File(imageFolder, "page_${i + 1}.png")
+                                            FileOutputStream(pageFile).use { out ->
+                                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                                            }
+                                            imageFiles.add(pageFile)
                                         }
-                                        imageFiles.add(pageFile)
                                     }
                                     renderer.close()
                                     pfd.close()
                                     
                                     processingMessage = "Saving high-res images archive..."
-                                    context.contentResolver.openOutputStream(targetUri)?.use { outStream ->
+                                    openOutputStream(targetUri)?.use { outStream ->
                                         ZipOutputStream(BufferedOutputStream(outStream)).use { zos ->
                                             for (file in imageFiles) {
                                                 val entry = ZipEntry(file.name)
@@ -611,6 +683,8 @@ fun HomeScreen(
                 showCompressDialog = true
             } else if (tool == EditorTool.ROTATE_PDF) {
                 showRotateDialog = true
+            } else if (tool == EditorTool.PDF_TO_IMAGE) {
+                showPdfToImageDialog = true
             } else {
                 saveEditorFileLauncher.launch(suggestedName)
             }
@@ -1971,6 +2045,181 @@ fun HomeScreen(
                 TextButton(
                     onClick = {
                         showRotateDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // PDF to Image Preview & Selection Dialog
+    if (showPdfToImageDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showPdfToImageDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Column {
+                    Text("PDF to Images", fontWeight = FontWeight.Bold)
+                    Text(
+                        originalName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Select which pages you want to convert to images:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    if (isPdfToImageLoading && pdfToImagePageCount == 0) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(150.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    } else {
+                        // Select all / None buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    selectedPagesToImage.clear()
+                                    for (i in 0 until pdfToImagePageCount) {
+                                        selectedPagesToImage.add(i)
+                                    }
+                                }
+                            ) {
+                                Text("Select All")
+                            }
+                            TextButton(
+                                onClick = {
+                                    selectedPagesToImage.clear()
+                                }
+                            ) {
+                                Text("Deselect All")
+                            }
+                        }
+
+                        Text(
+                            text = "${selectedPagesToImage.size} of $pdfToImagePageCount pages selected to convert",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        // Grid of page thumbnails
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                        ) {
+                            items(pdfToImagePageCount) { index ->
+                                val isSelected = selectedPagesToImage.contains(index)
+                                val thumbnail = pdfToImagePageBitmaps.getOrNull(index)
+
+                                Card(
+                                    onClick = {
+                                        if (isSelected) {
+                                            selectedPagesToImage.remove(index)
+                                        } else {
+                                            selectedPagesToImage.add(index)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(80.dp)
+                                                .background(Color.White, RoundedCornerShape(4.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (thumbnail != null) {
+                                                Image(
+                                                    bitmap = thumbnail.asImageBitmap(),
+                                                    contentDescription = "Page ${index + 1}",
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Checkbox(
+                                                checked = isSelected,
+                                                onCheckedChange = { checked ->
+                                                    if (checked) {
+                                                        if (!selectedPagesToImage.contains(index)) selectedPagesToImage.add(index)
+                                                    } else {
+                                                        selectedPagesToImage.remove(index)
+                                                    }
+                                                },
+                                                modifier = Modifier.scale(0.8f).size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "${index + 1}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (selectedPagesToImage.isEmpty()) {
+                            Toast.makeText(context, "Please select at least 1 page to convert.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val baseName = originalName.substringBeforeLast(".")
+                            showPdfToImageDialog = false
+                            saveEditorFileLauncher.launch("${baseName}_images.zip")
+                        }
+                    },
+                    enabled = selectedPagesToImage.isNotEmpty()
+                ) {
+                    Text("Convert & Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showPdfToImageDialog = false
                         selectedInputUri = null
                     }
                 ) {
