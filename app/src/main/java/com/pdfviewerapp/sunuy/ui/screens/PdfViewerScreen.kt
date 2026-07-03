@@ -1137,10 +1137,15 @@ fun PdfViewerScreen(
 
                 // Autohide / sleep scrollbar logic
                 var showScrollbar by remember { mutableStateOf(false) }
-                LaunchedEffect(firstVisibleItem, firstVisibleOffset) {
-                    showScrollbar = true
-                    kotlinx.coroutines.delay(2000L)
-                    showScrollbar = false
+                var isDraggingScrollbar by remember { mutableStateOf(false) }
+                LaunchedEffect(firstVisibleItem, firstVisibleOffset, isDraggingScrollbar) {
+                    if (isDraggingScrollbar) {
+                        showScrollbar = true
+                    } else {
+                        showScrollbar = true
+                        kotlinx.coroutines.delay(2000L)
+                        showScrollbar = false
+                    }
                 }
 
                 val scrollbarAlpha by animateFloatAsState(
@@ -1169,14 +1174,19 @@ fun PdfViewerScreen(
                                 }
                             }
                             .pointerInput(totalItems) {
-                                detectDragGestures { change, _ ->
-                                    change.consume()
-                                    val fraction = (change.position.y / trackHeight).coerceIn(0f, 1f)
-                                    val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
-                                    scope.launch {
-                                        listState.scrollToItem(targetIndex)
+                                detectDragGestures(
+                                    onDragStart = { isDraggingScrollbar = true },
+                                    onDragEnd = { isDraggingScrollbar = false },
+                                    onDragCancel = { isDraggingScrollbar = false },
+                                    onDrag = { change, _ ->
+                                        change.consume()
+                                        val fraction = (change.position.y / trackHeight).coerceIn(0f, 1f)
+                                        val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                        scope.launch {
+                                            listState.scrollToItem(targetIndex)
+                                        }
                                     }
-                                }
+                                )
                             }
                             .padding(vertical = 16.dp, horizontal = 8.dp)
                     ) {
@@ -1218,14 +1228,19 @@ fun PdfViewerScreen(
                                 }
                             }
                             .pointerInput(totalItems) {
-                                detectDragGestures { change, _ ->
-                                    change.consume()
-                                    val fraction = (change.position.x / trackWidth).coerceIn(0f, 1f)
-                                    val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
-                                    scope.launch {
-                                        listState.scrollToItem(targetIndex)
+                                detectDragGestures(
+                                    onDragStart = { isDraggingScrollbar = true },
+                                    onDragEnd = { isDraggingScrollbar = false },
+                                    onDragCancel = { isDraggingScrollbar = false },
+                                    onDrag = { change, _ ->
+                                        change.consume()
+                                        val fraction = (change.position.x / trackWidth).coerceIn(0f, 1f)
+                                        val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                        scope.launch {
+                                            listState.scrollToItem(targetIndex)
+                                        }
                                     }
-                                }
+                                )
                             }
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
