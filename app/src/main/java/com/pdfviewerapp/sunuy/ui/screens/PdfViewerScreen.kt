@@ -1153,6 +1153,9 @@ fun PdfViewerScreen(
                     animationSpec = tween(durationMillis = 300)
                 )
 
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val scrollbarPaddingPx = remember(density) { with(density) { 32.dp.toPx() } }
+
                 if (isVerticalScroll && totalItems > 1 && scrollbarAlpha > 0f) {
                     var trackHeight by remember { mutableStateOf(1f) }
                     Box(
@@ -1202,7 +1205,7 @@ fun PdfViewerScreen(
                                 .fillMaxWidth()
                                 .fillMaxHeight(0.15f) // Thumb height is 15% of track height
                                 .graphicsLayer {
-                                    translationY = (this.size.height * 0.85f) * scrollFraction
+                                    translationY = (trackHeight - scrollbarPaddingPx) * 0.85f * scrollFraction
                                 }
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                         )
@@ -1256,7 +1259,7 @@ fun PdfViewerScreen(
                                 .fillMaxHeight()
                                 .fillMaxWidth(0.15f) // Thumb width is 15% of track width
                                 .graphicsLayer {
-                                    translationX = (this.size.width * 0.85f) * scrollFraction
+                                    translationX = (trackWidth - scrollbarPaddingPx) * 0.85f * scrollFraction
                                 }
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                         )
