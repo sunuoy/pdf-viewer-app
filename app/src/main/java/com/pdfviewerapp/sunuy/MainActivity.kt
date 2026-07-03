@@ -26,14 +26,11 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
-    // Clear cache asynchronously on startup to clean up leftover files
-    clearCacheAsync()
+    // Defer non-critical startup tasks until after the app has launched and displayed to the user
+    deferStartupTasks()
 
     // Pre-initialize Room database in background to avoid Main thread disk/IPC blockages
     preInitializeDatabaseAsync()
-
-    // Copy assets to filesDir on update/new install
-    copyAssetsToFilesOnUpdate()
 
     enableEdgeToEdge()
 
@@ -70,7 +67,7 @@ class MainActivity : ComponentActivity() {
   override fun onDestroy() {
     super.onDestroy()
     if (isFinishing) {
-      clearCacheAsync()
+      clearCache()
     }
   }
 
@@ -84,52 +81,61 @@ class MainActivity : ComponentActivity() {
     }
   }
 
-  private fun copyAssetsToFilesOnUpdate() {
+  private fun deferStartupTasks() {
     CoroutineScope(Dispatchers.IO).launch {
       try {
-        val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
-        val currentVersionCode = try {
-          val pInfo = packageManager.getPackageInfo(packageName, 0)
-          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            pInfo.longVersionCode
-          } else {
-            @Suppress("DEPRECATION")
-            pInfo.versionCode.toLong()
-          }
-        } catch (e: Exception) {
-          -1L
-        }
-
-        val lastVersionCode = sharedPrefs.getLong("last_version_code", -1L)
-
-        // If it's a new install or update, copy/overwrite files from assets
-        if (currentVersionCode != lastVersionCode) {
-          assets.list("")?.forEach { assetName ->
-            if (assetName.endsWith(".pdf") || assetName.endsWith(".txt") || assetName.endsWith(".md") || assetName.endsWith(".html")) {
-              val outFile = File(filesDir, assetName)
-              assets.open(assetName).use { input ->
-                FileOutputStream(outFile).use { output ->
-                  input.copyTo(output)
-                }
-              }
-            }
-          }
-          sharedPrefs.edit().putLong("last_version_code", currentVersionCode).apply()
-        }
+        // Wait 3 seconds for app launch to settle before executing disk operations
+        kotlinx.coroutines.delay(3000L)
+        clearCache()
+        copyAssetsToFilesOnUpdate()
       } catch (e: Exception) {
-        android.util.Log.e("MainActivity", "Error copying assets", e)
+        // Ignore
       }
     }
   }
 
-  private fun clearCacheAsync() {
-    CoroutineScope(Dispatchers.IO).launch {
-      try {
-        cacheDir.deleteContents()
-        externalCacheDir?.deleteContents()
+  private fun copyAssetsToFilesOnUpdate() {
+    try {
+      val sharedPrefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+      val currentVersionCode = try {
+        val pInfo = packageManager.getPackageInfo(packageName, 0)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+          pInfo.longVersionCode
+        } else {
+          @Suppress("DEPRECATION")
+          pInfo.versionCode.toLong()
+        }
       } catch (e: Exception) {
-        // Ignore
+        -1L
       }
+
+      val lastVersionCode = sharedPrefs.getLong("last_version_code", -1L)
+
+      // If it's a new install or update, copy/overwrite files from assets
+      if (currentVersionCode != lastVersionCode) {
+        assets.list("")?.forEach { assetName ->
+          if (assetName.endsWith(".pdf") || assetName.endsWith(".txt") || assetName.endsWith(".md") || assetName.endsWith(".html")) {
+            val outFile = File(filesDir, assetName)
+            assets.open(assetName).use { input ->
+              FileOutputStream(outFile).use { output ->
+                input.copyTo(output)
+              }
+            }
+          }
+        }
+        sharedPrefs.edit().putLong("last_version_code", currentVersionCode).apply()
+      }
+    } catch (e: Exception) {
+      android.util.Log.e("MainActivity", "Error copying assets", e)
+    }
+  }
+
+  private fun clearCache() {
+    try {
+      cacheDir.deleteContents()
+      externalCacheDir?.deleteContents()
+    } catch (e: Exception) {
+      // Ignore
     }
   }
 

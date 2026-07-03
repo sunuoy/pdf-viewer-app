@@ -24,14 +24,13 @@ fun SplashScreen(onSplashFinished: () -> Unit) {
 
     LaunchedEffect(key1 = true) {
         scale.animateTo(
-            targetValue = 1.2f,
-            animationSpec = tween(durationMillis = 400)
+            targetValue = 1.15f,
+            animationSpec = tween(durationMillis = 200)
         )
         scale.animateTo(
             targetValue = 1.0f,
-            animationSpec = tween(durationMillis = 150)
+            animationSpec = tween(durationMillis = 100)
         )
-        delay(50)
         onSplashFinished()
     }
 
