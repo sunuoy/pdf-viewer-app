@@ -75,6 +75,8 @@ import java.util.zip.ZipOutputStream
 import androidx.compose.foundation.Image
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.material3.FilterChip
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -115,6 +117,14 @@ fun HomeScreen(
     // Compress PDF State
     var showCompressDialog by remember { mutableStateOf(false) }
     var compressionPercentage by remember { mutableStateOf(50) }
+
+    // Rotate PDF State
+    var showRotateDialog by remember { mutableStateOf(false) }
+    var rotateDegrees by remember { mutableStateOf(90) }
+    val selectedPagesToRotate = remember { mutableStateListOf<Int>() }
+    val rotatePageBitmaps = remember { mutableStateListOf<Bitmap?>() }
+    var rotatePageCount by remember { mutableStateOf(0) }
+    var isRotateLoading by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
     var isGoogleDriveConnected by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.isLoggedIn(context)) }
     var googleDriveEmail by remember { mutableStateOf(com.pdfviewerapp.sunuy.services.GoogleDriveManager.getEmail(context)) }
@@ -198,6 +208,58 @@ fun HomeScreen(
                     android.util.Log.e("HomeScreen", "Error loading pdf for split", e)
                 } finally {
                     isSplitLoading = false
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(showRotateDialog, selectedInputUri) {
+        if (showRotateDialog && selectedInputUri != null) {
+            isRotateLoading = true
+            rotatePageBitmaps.clear()
+            selectedPagesToRotate.clear()
+            withContext(Dispatchers.IO) {
+                try {
+                    val pfd = if (selectedInputUri!!.scheme == "file") {
+                        android.os.ParcelFileDescriptor.open(java.io.File(selectedInputUri!!.path ?: ""), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
+                    } else {
+                        context.contentResolver.openFileDescriptor(selectedInputUri!!, "r")
+                    }
+                    if (pfd != null) {
+                        val renderer = PdfRenderer(pfd)
+                        val count = renderer.pageCount
+                        rotatePageCount = count
+                        
+                        // Default select all pages to rotate
+                        for (i in 0 until count) {
+                            selectedPagesToRotate.add(i)
+                            rotatePageBitmaps.add(null) // placeholder
+                        }
+                        
+                        // Load small thumbnails
+                        for (i in 0 until count) {
+                            try {
+                                val page = renderer.openPage(i)
+                                val targetWidth = 200
+                                val targetHeight = (targetWidth * (page.height.toFloat() / page.width.toFloat())).toInt()
+                                val bmp = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+                                bmp.eraseColor(android.graphics.Color.WHITE)
+                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                page.close()
+                                withContext(Dispatchers.Main) {
+                                    rotatePageBitmaps[i] = bmp
+                                }
+                            } catch (e: java.lang.Exception) {
+                                android.util.Log.e("HomeScreen", "Error rendering rotate thumbnail $i", e)
+                            }
+                        }
+                        renderer.close()
+                        pfd.close()
+                    }
+                } catch (e: java.lang.Exception) {
+                    android.util.Log.e("HomeScreen", "Error loading pdf for rotate", e)
+                } finally {
+                    isRotateLoading = false
                 }
             }
         }
@@ -475,10 +537,37 @@ fun HomeScreen(
                         EditorTool.ROTATE_PDF -> {
                             processingMessage = "Adjusting page rotation..."
                             withContext(Dispatchers.IO) {
-                                context.contentResolver.openInputStream(inputUri)?.use { input ->
-                                    context.contentResolver.openOutputStream(targetUri)?.use { output ->
-                                        input.copyTo(output)
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
                                     }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+
+                                openInputStream(inputUri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input)
+                                    
+                                    // Rotate only the selected pages by the selected degrees
+                                    for (i in 0 until document.numberOfPages) {
+                                        if (i in selectedPagesToRotate) {
+                                            val page = document.getPage(i)
+                                            val currentRotation = page.rotation
+                                            page.rotation = (currentRotation + rotateDegrees) % 360
+                                        }
+                                    }
+                                    
+                                    openOutputStream(targetUri)?.use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
                                 }
                                 processedFileUri = targetUri
                                 generatedMimeType = "application/pdf"
@@ -520,6 +609,8 @@ fun HomeScreen(
                 showSplitPreviewDialog = true
             } else if (tool == EditorTool.COMPRESS_PDF) {
                 showCompressDialog = true
+            } else if (tool == EditorTool.ROTATE_PDF) {
+                showRotateDialog = true
             } else {
                 saveEditorFileLauncher.launch(suggestedName)
             }
@@ -1679,6 +1770,207 @@ fun HomeScreen(
                 TextButton(
                     onClick = {
                         showCompressDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Rotate Preview & Angle Dialog
+    if (showRotateDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showRotateDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Column {
+                    Text("Rotate PDF Pages", fontWeight = FontWeight.Bold)
+                    Text(
+                        originalName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Option to choose rotation angle
+                    Text("Select Rotation Angle:", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(90, 180, 270).forEach { angle ->
+                            val label = when (angle) {
+                                90 -> "90° CW"
+                                180 -> "180°"
+                                270 -> "270° CW"
+                                else -> "$angle°"
+                            }
+                            FilterChip(
+                                selected = rotateDegrees == angle,
+                                onClick = { rotateDegrees = angle },
+                                label = { Text(label) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    if (isRotateLoading && rotatePageCount == 0) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(150.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    } else {
+                        // Select all / None buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    selectedPagesToRotate.clear()
+                                    for (i in 0 until rotatePageCount) {
+                                        selectedPagesToRotate.add(i)
+                                    }
+                                }
+                            ) {
+                                Text("Select All")
+                            }
+                            TextButton(
+                                onClick = {
+                                    selectedPagesToRotate.clear()
+                                }
+                            ) {
+                                Text("Deselect All")
+                            }
+                        }
+
+                        Text(
+                            text = "${selectedPagesToRotate.size} of $rotatePageCount pages selected to rotate",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        // Grid of page thumbnails
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                        ) {
+                            items(rotatePageCount) { index ->
+                                val isSelected = selectedPagesToRotate.contains(index)
+                                val thumbnail = rotatePageBitmaps.getOrNull(index)
+
+                                Card(
+                                    onClick = {
+                                        if (isSelected) {
+                                            selectedPagesToRotate.remove(index)
+                                        } else {
+                                            selectedPagesToRotate.add(index)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(80.dp)
+                                                .background(Color.White, RoundedCornerShape(4.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (thumbnail != null) {
+                                                // Preview image rotated by the selected angle if selected
+                                                Image(
+                                                    bitmap = thumbnail.asImageBitmap(),
+                                                    contentDescription = "Page ${index + 1}",
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .scale(if (isSelected && rotateDegrees % 180 != 0) 0.7f else 1f) // Scale down to fit inside box when rotated 90/270 degrees
+                                                        .drawWithContent {
+                                                            if (isSelected) {
+                                                                // Draw with rotation angle applied to visual thumbnail!
+                                                                drawContext.transform.rotate(rotateDegrees.toFloat(), center)
+                                                            }
+                                                            drawContent()
+                                                        }
+                                                )
+                                            } else {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Checkbox(
+                                                checked = isSelected,
+                                                onCheckedChange = { checked ->
+                                                    if (checked) {
+                                                        if (!selectedPagesToRotate.contains(index)) selectedPagesToRotate.add(index)
+                                                    } else {
+                                                        selectedPagesToRotate.remove(index)
+                                                    }
+                                                },
+                                                modifier = Modifier.scale(0.8f).size(20.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "${index + 1}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (selectedPagesToRotate.isEmpty()) {
+                            Toast.makeText(context, "Please select at least 1 page to rotate.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val baseName = originalName.substringBeforeLast(".")
+                            showRotateDialog = false
+                            saveEditorFileLauncher.launch("${baseName}_rotated.pdf")
+                        }
+                    },
+                    enabled = selectedPagesToRotate.isNotEmpty()
+                ) {
+                    Text("Rotate & Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRotateDialog = false
                         selectedInputUri = null
                     }
                 ) {
