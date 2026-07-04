@@ -1,4 +1,4 @@
-# Release v1.1.14 - PDF Viewer & Multi-Format Reader
+# Release v1.1.15 - PDF Viewer & Multi-Format Reader
 
 This release introduces comprehensive multi-format support, organized 3-dot options menu, and Moon+ Reader style quick-action bar customization.
 
