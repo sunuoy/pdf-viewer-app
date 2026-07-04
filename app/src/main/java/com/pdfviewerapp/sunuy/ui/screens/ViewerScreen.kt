@@ -61,6 +61,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -240,6 +241,7 @@ fun PdfViewerScreen(
     var rulerHeight by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_height", 55f)) }
     var rulerFocusStripeHeight by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_stripe_height", 12f)) }
     var rulerColorStripe by remember { mutableStateOf(sharedPrefs.getInt("reading_ruler_stripe_color", 0xE6E9FF32.toInt())) }
+    var isRulerStripeColorEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("reading_ruler_stripe_color_enabled", true)) }
     var rulerOpacityOuter by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_opacity_outer", 0.3f)) }
     var isRulerSettingsOpen by remember { mutableStateOf(false) }
     var rulerTheme by remember { mutableStateOf(sharedPrefs.getString("reading_ruler_theme", "solid") ?: "solid") }
@@ -2449,19 +2451,34 @@ fun PdfViewerScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         if (rulerTheme == "solid") {
-                            // Standard Solid theme
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color(0xFF3E4756).copy(alpha = rulerOpacityOuter))
-                            )
-                            // Focus stripe in center
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(rulerFocusStripeHeight.dp)
-                                    .background(Color(rulerColorStripe))
-                            )
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val widthPx = size.width
+                                val heightPx = size.height
+                                val stripeHeightPx = rulerFocusStripeHeight.dp.toPx()
+
+                                drawRoundRect(
+                                    color = Color(0xFF3E4756).copy(alpha = rulerOpacityOuter),
+                                    size = size,
+                                    cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
+                                )
+
+                                drawRoundRect(
+                                    color = Color.Transparent,
+                                    topLeft = Offset(12.dp.toPx(), (heightPx - stripeHeightPx) / 2),
+                                    size = Size(widthPx - 24.dp.toPx(), stripeHeightPx),
+                                    cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                                    blendMode = androidx.compose.ui.graphics.BlendMode.Clear
+                                )
+                            }
+                            if (isRulerStripeColorEnabled) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 28.dp)
+                                        .height(rulerFocusStripeHeight.dp)
+                                        .background(Color(rulerColorStripe))
+                                )
+                            }
                         } else {
                             // Custom theme drawing using Canvas
                             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -2602,13 +2619,15 @@ fun PdfViewerScreen(
                                 )
                             }
                             // 4. Draw focus stripe with user selected color
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 28.dp)
-                                    .height(rulerFocusStripeHeight.dp)
-                                    .background(Color(rulerColorStripe).copy(alpha = 0.35f)) // semi-transparent color overlay for readability
-                            )
+                            if (isRulerStripeColorEnabled) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 28.dp)
+                                        .height(rulerFocusStripeHeight.dp)
+                                        .background(Color(rulerColorStripe).copy(alpha = 0.35f)) // semi-transparent color overlay for readability
+                                )
+                            }
                         }
                     }
                 }
@@ -3653,6 +3672,122 @@ fun PdfViewerScreen(
                         )
                     }
 
+                    // Live Ruler Preview Box
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF2C323E)) // dark background for contrast
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(36.dp) // mini fixed height for preview
+                                .clip(RoundedCornerShape(4.dp))
+                                .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val previewHeight = 36f
+                            val previewStripeHeight = (rulerFocusStripeHeight * (36f / rulerHeight.coerceAtLeast(1f))).coerceAtMost(24f)
+
+                            if (rulerTheme == "solid") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color(0xFF3E4756).copy(alpha = rulerOpacityOuter))
+                                )
+                                if (isRulerStripeColorEnabled) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(previewStripeHeight.dp)
+                                            .background(Color(rulerColorStripe))
+                                    )
+                                }
+                            } else {
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val widthPx = size.width
+                                    val heightPx = size.height
+                                    val stripeHeightPx = previewStripeHeight.dp.toPx()
+
+                                    if (rulerTheme == "classic") {
+                                        drawRoundRect(
+                                            color = Color(0xFFDFD0C0).copy(alpha = rulerOpacityOuter),
+                                            size = size,
+                                            cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                                        )
+                                        val tickColor = Color(0xFF5D4037).copy(alpha = rulerOpacityOuter)
+                                        val numTicks = 15
+                                        val spacing = widthPx / numTicks
+                                        for (i in 0..numTicks) {
+                                            val x = i * spacing
+                                            val tickLen = if (i % 5 == 0) 5.dp.toPx() else 3.dp.toPx()
+                                            drawLine(
+                                                color = tickColor,
+                                                start = Offset(x, 0f),
+                                                end = Offset(x, tickLen),
+                                                strokeWidth = 1.dp.toPx()
+                                            )
+                                            drawLine(
+                                                color = tickColor,
+                                                start = Offset(x, heightPx),
+                                                end = Offset(x, heightPx - tickLen),
+                                                strokeWidth = 1.dp.toPx()
+                                            )
+                                        }
+                                    } else {
+                                        // Retro preview
+                                        drawRoundRect(
+                                            color = Color(0xFF3F3D56).copy(alpha = rulerOpacityOuter),
+                                            size = size,
+                                            cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                                        )
+                                        val stripeColor = Color(0xFF00ADB5).copy(alpha = rulerOpacityOuter)
+                                        for (i in 0..3) {
+                                            drawLine(
+                                                color = stripeColor,
+                                                start = Offset(10.dp.toPx() + i * 6.dp.toPx(), 2.dp.toPx()),
+                                                end = Offset(2.dp.toPx() + i * 6.dp.toPx(), heightPx - 2.dp.toPx()),
+                                                strokeWidth = 2.dp.toPx()
+                                            )
+                                        }
+                                        val dotColor = Color(0xFFFFD200).copy(alpha = rulerOpacityOuter)
+                                        for (row in 0..1) {
+                                            for (col in 0..2) {
+                                                drawCircle(
+                                                    color = dotColor,
+                                                    radius = 1.5f.dp.toPx(),
+                                                    center = Offset(widthPx - 25.dp.toPx() + col * 5.dp.toPx(), 6.dp.toPx() + row * 5.dp.toPx())
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Cutout window in center
+                                    drawRoundRect(
+                                        color = Color.Transparent,
+                                        topLeft = Offset(8.dp.toPx(), (heightPx - stripeHeightPx) / 2),
+                                        size = Size(widthPx - 16.dp.toPx(), stripeHeightPx),
+                                        cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
+                                        blendMode = androidx.compose.ui.graphics.BlendMode.Clear
+                                    )
+                                }
+                                if (isRulerStripeColorEnabled) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 20.dp)
+                                            .height(previewStripeHeight.dp)
+                                            .background(Color(rulerColorStripe).copy(alpha = 0.35f))
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // 1. Ruler Height
                     Column {
                         Text(
@@ -3799,14 +3934,34 @@ fun PdfViewerScreen(
                                 color = Color.White,
                                 style = MaterialTheme.typography.bodyMedium
                             )
-                            // Live Preview Circle
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(Color(rulerColorStripe))
-                                    .border(1.dp, Color.White, RoundedCornerShape(16.dp))
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Stripe Color ON/OFF Switch
+                                Switch(
+                                    checked = isRulerStripeColorEnabled,
+                                    onCheckedChange = {
+                                        isRulerStripeColorEnabled = it
+                                        sharedPrefs.edit().putBoolean("reading_ruler_stripe_color_enabled", it).apply()
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFF03A9F4),
+                                        uncheckedThumbColor = Color.Gray,
+                                        uncheckedTrackColor = Color.DarkGray
+                                    ),
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                                // Live Preview Circle
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(if (isRulerStripeColorEnabled) Color(rulerColorStripe) else Color.Transparent)
+                                        .border(1.dp, Color.White, RoundedCornerShape(16.dp))
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.height(4.dp))
 
@@ -3815,7 +3970,8 @@ fun PdfViewerScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("R: $r", color = Color(0xFFFF8A80), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            val rColor = if (isRulerStripeColorEnabled) Color(0xFFFF8A80) else Color.Gray
+                            Text("R: $r", color = rColor, modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                             Slider(
                                 value = r.toFloat(),
                                 onValueChange = {
@@ -3824,11 +3980,15 @@ fun PdfViewerScreen(
                                     sharedPrefs.edit().putInt("reading_ruler_stripe_color", newColor).apply()
                                 },
                                 valueRange = 0f..255f,
+                                enabled = isRulerStripeColorEnabled,
                                 modifier = Modifier.weight(1f),
                                 colors = SliderDefaults.colors(
                                     thumbColor = Color.White,
                                     activeTrackColor = Color(0xFFFF5252),
-                                    inactiveTrackColor = Color.DarkGray
+                                    inactiveTrackColor = Color.DarkGray,
+                                    disabledThumbColor = Color.Gray,
+                                    disabledActiveTrackColor = Color.DarkGray,
+                                    disabledInactiveTrackColor = Color.DarkGray
                                 )
                             )
                         }
@@ -3838,7 +3998,8 @@ fun PdfViewerScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("G: $g", color = Color(0xFFB9F6CA), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            val gColor = if (isRulerStripeColorEnabled) Color(0xFFB9F6CA) else Color.Gray
+                            Text("G: $g", color = gColor, modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                             Slider(
                                 value = g.toFloat(),
                                 onValueChange = {
@@ -3847,11 +4008,15 @@ fun PdfViewerScreen(
                                     sharedPrefs.edit().putInt("reading_ruler_stripe_color", newColor).apply()
                                 },
                                 valueRange = 0f..255f,
+                                enabled = isRulerStripeColorEnabled,
                                 modifier = Modifier.weight(1f),
                                 colors = SliderDefaults.colors(
                                     thumbColor = Color.White,
                                     activeTrackColor = Color(0xFF69F0AE),
-                                    inactiveTrackColor = Color.DarkGray
+                                    inactiveTrackColor = Color.DarkGray,
+                                    disabledThumbColor = Color.Gray,
+                                    disabledActiveTrackColor = Color.DarkGray,
+                                    disabledInactiveTrackColor = Color.DarkGray
                                 )
                             )
                         }
@@ -3861,7 +4026,8 @@ fun PdfViewerScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("B: $b", color = Color(0xFF82B1FF), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            val bColor = if (isRulerStripeColorEnabled) Color(0xFF82B1FF) else Color.Gray
+                            Text("B: $b", color = bColor, modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                             Slider(
                                 value = b.toFloat(),
                                 onValueChange = {
@@ -3870,11 +4036,15 @@ fun PdfViewerScreen(
                                     sharedPrefs.edit().putInt("reading_ruler_stripe_color", newColor).apply()
                                 },
                                 valueRange = 0f..255f,
+                                enabled = isRulerStripeColorEnabled,
                                 modifier = Modifier.weight(1f),
                                 colors = SliderDefaults.colors(
                                     thumbColor = Color.White,
                                     activeTrackColor = Color(0xFF448AFF),
-                                    inactiveTrackColor = Color.DarkGray
+                                    inactiveTrackColor = Color.DarkGray,
+                                    disabledThumbColor = Color.Gray,
+                                    disabledActiveTrackColor = Color.DarkGray,
+                                    disabledInactiveTrackColor = Color.DarkGray
                                 )
                             )
                         }
