@@ -106,4 +106,35 @@ git add app/build.gradle.kts release/
 git commit -m "release: v$newName (auto-build: $Type bump)"
 git push origin main
 
+# 9. Create GitHub Release and Upload APK
+Write-Host "Checking git credentials for GitHub Release..."
+try {
+    $credInfo = echo "url=https://github.com" | git credential fill
+    $token = ""
+    foreach ($line in $credInfo) {
+        if ($line.StartsWith("password=")) {
+            $token = $line.Substring(9).Trim()
+        }
+    }
+
+    if (-not [string]::IsNullOrEmpty($token)) {
+        $env:GH_TOKEN = $token
+        Write-Host "Creating GitHub Release v$newName and uploading APK..."
+        
+        # Check if gh CLI is installed
+        $ghPath = "C:\Program Files\GitHub CLI\gh.exe"
+        if (Test-Path $ghPath) {
+            # Create the release and upload the APK
+            & $ghPath release create "v$newName" $destApk --title "Release v$newName" --notes-file $notesPath --clobber
+            Write-Host "Successfully created GitHub Release and uploaded APK!"
+        } else {
+            Write-Warning "GitHub CLI (gh.exe) was not found at $ghPath. Skipping release upload."
+        }
+    } else {
+        Write-Warning "Could not retrieve git credentials token. Skipping GitHub Release creation."
+    }
+} catch {
+    Write-Warning "Failed to automate GitHub Release: $_"
+}
+
 Write-Host "Release automation complete!"
