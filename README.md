@@ -61,6 +61,12 @@ A high-performance, feature-rich Android application designed for offline PDF vi
 
 ---
 
+## 📜 Development Guidelines
+
+Please refer to the [WORKSPACE_RULES.md](file:///d:/data/ai/pdf-viewer-app/WORKSPACE_RULES.md) file for standards on semantic versioning, build code increments, database migration rules, and asset synchronizations.
+
+---
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
