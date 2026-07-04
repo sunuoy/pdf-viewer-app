@@ -1138,7 +1138,7 @@ fun HomeScreen(
             ) {
                 // Pick File card
                 Card(
-                    onClick = { filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "text/markdown", "text/html", "text/*")) },
+                    onClick = { filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "text/markdown", "text/html", "text/*", "application/epub+zip")) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(130.dp)
@@ -1202,13 +1202,36 @@ fun HomeScreen(
     
                 Spacer(modifier = Modifier.height(16.dp))
     
-                Text(
-                    text = "Recent Documents",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 12.dp),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Recent Documents",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    if (recentPdfs.isNotEmpty()) {
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    database.recentPdfDao().deleteAllRecentPdfs()
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "Clear All",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
     
                 if (recentPdfs.isEmpty()) {
                     Box(

@@ -209,17 +209,30 @@ fun PdfViewerScreen(
         isTtsActive = true
         scope.launch {
             try {
-                val pageData = pdfTextService.getPageTextAndPositions(context, Uri.parse(pdfPath), pageIndex)
-                if (pageData.text.isNotBlank()) {
-                    activeTtsPageData = pageData
-                    activeTtsPageIndex = pageIndex
-                    ttsTextCurrentPage = pageData.text
-                    ttsService.setLanguage(Locale.getDefault().toLanguageTag())
-                    ttsService.startSpeaking(pageData.text)
+                if (isTextDocument) {
+                    val text = textDocumentContent ?: ""
+                    if (text.isNotBlank()) {
+                        ttsService.setLanguage(Locale.getDefault().toLanguageTag())
+                        ttsService.startSpeaking(text)
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "No text content found to read", Toast.LENGTH_SHORT).show()
+                            isTtsActive = false
+                        }
+                    }
                 } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "No readable text found on this page", Toast.LENGTH_SHORT).show()
-                        isTtsActive = false
+                    val pageData = pdfTextService.getPageTextAndPositions(context, Uri.parse(pdfPath), pageIndex)
+                    if (pageData.text.isNotBlank()) {
+                        activeTtsPageData = pageData
+                        activeTtsPageIndex = pageIndex
+                        ttsTextCurrentPage = pageData.text
+                        ttsService.setLanguage(Locale.getDefault().toLanguageTag())
+                        ttsService.startSpeaking(pageData.text)
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "No readable text found on this page", Toast.LENGTH_SHORT).show()
+                            isTtsActive = false
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -350,7 +363,11 @@ fun PdfViewerScreen(
         isTranslatingMap[pageIndex] = true
         scope.launch {
             try {
-                val text = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), pageIndex)
+                val text = if (isTextDocument) {
+                    textDocumentContent ?: ""
+                } else {
+                    pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), pageIndex)
+                }
                 if (text.isNotBlank()) {
                     val translated = translationService.translate(
                         text = text,
@@ -409,9 +426,11 @@ fun PdfViewerScreen(
                 documentName = getFileName(context, uri) ?: "Document"
                 val lowerName = documentName.lowercase()
                 
-                if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") || lowerName.endsWith(".html") || lowerName.endsWith(".htm")) {
+                if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") || lowerName.endsWith(".html") || lowerName.endsWith(".htm") || lowerName.endsWith(".epub")) {
                     isTextDocument = true
-                    val content = if (uri.scheme == "file") {
+                    val content = if (lowerName.endsWith(".epub")) {
+                        com.pdfviewerapp.sunuy.services.EpubService.parseEpubToText(context, uri)
+                    } else if (uri.scheme == "file") {
                         File(uri.path ?: "").readText(Charsets.UTF_8)
                     } else {
                         context.contentResolver.openInputStream(uri)?.use { input ->
@@ -784,11 +803,19 @@ fun PdfViewerScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(20.dp)
+                            .padding(20.dp),
+                        contentAlignment = Alignment.Center
                     ) {
                         val scrollState = androidx.compose.foundation.rememberScrollState()
+                        val isTranslating = isTranslatingMap[0] == true
+                        val displayText = if (isTranslationBarActive && activeTranslations.containsKey(0)) {
+                            activeTranslations[0] ?: ""
+                        } else {
+                            textDocumentContent!!
+                        }
+
                         Text(
-                            text = textDocumentContent!!,
+                            text = displayText,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(scrollState),
@@ -798,6 +825,17 @@ fun PdfViewerScreen(
                             ),
                             color = if (isDarkThemeInverted) Color.White else Color(0xFF1E293B)
                         )
+
+                        if (isTranslating) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.3f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
                     }
                 }
             } else if (pdfRenderer != null && pageCount > 0) {
@@ -2053,7 +2091,7 @@ fun PdfViewerScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (isTextDocument) {
+                            if (isTextDocument && !pdfPath.lowercase().endsWith(".epub")) {
                                 Button(
                                     onClick = {
                                         scope.launch {

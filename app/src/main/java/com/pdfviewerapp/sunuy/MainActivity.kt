@@ -34,20 +34,29 @@ class MainActivity : ComponentActivity() {
 
     enableEdgeToEdge()
 
-    // Handle incoming intent for shared/opened PDF
+    // Handle incoming intent for shared/opened documents
     var sharedPdfUri: String? = null
     val action = intent?.action
     val type = intent?.type
     
-    if (Intent.ACTION_VIEW == action && type == "application/pdf") {
+    val isSupportedType = type == "application/pdf" || 
+                          type == "application/epub+zip" || 
+                          type == "text/plain" || 
+                          type == "text/markdown" || 
+                          type == "text/html" ||
+                          type?.startsWith("text/") == true
+    
+    if (Intent.ACTION_VIEW == action && isSupportedType) {
       intent.data?.let { uri ->
-        sharedPdfUri = uri.toString()
-        persistUriAndInsertRecent(uri)
+        val internalUri = copyUriToInternalStorage(uri)
+        sharedPdfUri = internalUri.toString()
+        persistUriAndInsertRecent(internalUri)
       }
-    } else if (Intent.ACTION_SEND == action && type == "application/pdf") {
+    } else if (Intent.ACTION_SEND == action && isSupportedType) {
       (intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri)?.let { uri ->
-        sharedPdfUri = uri.toString()
-        persistUriAndInsertRecent(uri)
+        val internalUri = copyUriToInternalStorage(uri)
+        sharedPdfUri = internalUri.toString()
+        persistUriAndInsertRecent(internalUri)
       }
     }
 
@@ -68,6 +77,47 @@ class MainActivity : ComponentActivity() {
     super.onDestroy()
     if (isFinishing) {
       clearCache()
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    val action = intent.action
+    val type = intent.type
+    val isSupportedType = type == "application/pdf" || 
+                          type == "application/epub+zip" || 
+                          type == "text/plain" || 
+                          type == "text/markdown" || 
+                          type == "text/html" ||
+                          type?.startsWith("text/") == true
+                          
+    if (Intent.ACTION_VIEW == action && isSupportedType) {
+      intent.data?.let { uri ->
+        val internalUri = copyUriToInternalStorage(uri)
+        recreate()
+      }
+    } else if (Intent.ACTION_SEND == action && isSupportedType) {
+      (intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri)?.let { uri ->
+        val internalUri = copyUriToInternalStorage(uri)
+        recreate()
+      }
+    }
+  }
+
+  private fun copyUriToInternalStorage(uri: Uri): Uri {
+    try {
+      val name = getFileName(applicationContext, uri) ?: (if (uri.toString().contains(".epub", ignoreCase = true)) "Document.epub" else "Document.pdf")
+      val destFile = File(filesDir, "imported_${System.currentTimeMillis()}_$name")
+      contentResolver.openInputStream(uri)?.use { input ->
+        FileOutputStream(destFile).use { output ->
+          input.copyTo(output)
+        }
+      }
+      return Uri.fromFile(destFile)
+    } catch (e: Exception) {
+      android.util.Log.e("MainActivity", "Failed to copy URI to internal storage", e)
+      return uri
     }
   }
 
@@ -114,7 +164,7 @@ class MainActivity : ComponentActivity() {
       // If it's a new install or update, copy/overwrite files from assets
       if (currentVersionCode != lastVersionCode) {
         assets.list("")?.forEach { assetName ->
-          if (assetName.endsWith(".pdf") || assetName.endsWith(".txt") || assetName.endsWith(".md") || assetName.endsWith(".html")) {
+          if (assetName.endsWith(".pdf") || assetName.endsWith(".txt") || assetName.endsWith(".md") || assetName.endsWith(".html") || assetName.endsWith(".epub")) {
             val outFile = File(filesDir, assetName)
             assets.open(assetName).use { input ->
               FileOutputStream(outFile).use { output ->
@@ -157,7 +207,7 @@ class MainActivity : ComponentActivity() {
     
     CoroutineScope(Dispatchers.IO).launch {
       val database = AppDatabase.getDatabase(applicationContext)
-      val name = getFileName(applicationContext, uri) ?: "Document.pdf"
+      val name = getFileName(applicationContext, uri) ?: (if (uri.toString().contains(".epub", ignoreCase = true)) "Document.epub" else "Document.pdf")
       val existing = database.recentPdfDao().getRecentPdfByPath(uri.toString())
       val recentPdf = RecentPdf(
           id = existing?.id ?: 0,

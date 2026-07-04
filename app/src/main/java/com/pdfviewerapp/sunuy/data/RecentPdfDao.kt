@@ -20,4 +20,7 @@ interface RecentPdfDao {
 
     @Query("DELETE FROM recent_pdfs WHERE path = :path")
     suspend fun deleteRecentPdfByPath(path: String)
+
+    @Query("DELETE FROM recent_pdfs")
+    suspend fun deleteAllRecentPdfs()
 }

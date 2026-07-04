@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <application
         android:allowBackup="true"
@@ -11,7 +13,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:windowSoftInputMode="adjustResize"
-        android:theme="@style/Theme.PDFViewerApp">
+        android:theme="@style/Theme.PDFViewerApp"
+        android:requestLegacyExternalStorage="true">
 
         <activity
             android:name=".MainActivity"
@@ -33,6 +36,7 @@
                 <data android:mimeType="text/markdown" />
                 <data android:mimeType="text/html" />
                 <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/epub+zip" />
             </intent-filter>
             
             <!-- Receive shared document intent filter -->
@@ -43,6 +47,7 @@
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="text/markdown" />
                 <data android:mimeType="text/html" />
+                <data android:mimeType="application/epub+zip" />
             </intent-filter>
         </activity>
 
