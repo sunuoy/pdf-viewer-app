@@ -12,8 +12,8 @@ android {
         applicationId = "com.pdfviewerapp.sunuy"
         minSdk = 24
         targetSdk = 36
-        versionCode = 22
-        versionName = "1.1.6"
+        versionCode = 23
+        versionName = "1.1.7"
 
         ndk {
             abiFilters.addAll(setOf("arm64-v8a", "x86_64"))

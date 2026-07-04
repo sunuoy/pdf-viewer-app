@@ -125,7 +125,7 @@ try {
         $ghPath = "C:\Program Files\GitHub CLI\gh.exe"
         if (Test-Path $ghPath) {
             # Create the release and upload the APK
-            & $ghPath release create "v$newName" $destApk --title "Release v$newName" --notes-file $notesPath --clobber
+            & $ghPath release create "v$newName" $destApk --title "Release v$newName" --notes-file $notesPath
             Write-Host "Successfully created GitHub Release and uploaded APK!"
         } else {
             Write-Warning "GitHub CLI (gh.exe) was not found at $ghPath. Skipping release upload."
