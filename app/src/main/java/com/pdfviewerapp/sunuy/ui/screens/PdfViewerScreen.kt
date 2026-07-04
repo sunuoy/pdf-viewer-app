@@ -223,7 +223,7 @@ fun PdfViewerScreen(
     var isTiltToTurnPageEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_tilt_to_turn_page", false)) }
     var isReadingRulerEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_reading_ruler_enabled", false)) }
     var rulerYOffset by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_y", 400f)) }
-    var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 16f)) }
+    var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 14f)) }
     var isScreenDimmed by remember { mutableStateOf(false) }
     var isDarkThemeInverted by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -682,9 +682,10 @@ fun PdfViewerScreen(
 
     // Cycle text document font size
     fun cycleFontSize() {
-        val sizes = listOf(14f, 16f, 18f, 20f, 22f, 24f)
+        val sizes = listOf(12f, 14f, 16f, 18f, 20f, 22f)
         val currentIndex = sizes.indexOf(textFontSize)
-        val nextIndex = (currentIndex + 1) % sizes.size
+        // Fallback in case old textFontSize is not in the new list (e.g. 24f)
+        val nextIndex = if (currentIndex == -1) 1 else (currentIndex + 1) % sizes.size
         textFontSize = sizes[nextIndex]
         sharedPrefs.edit().putFloat("text_font_size", textFontSize).apply()
         Toast.makeText(context, "Font Size: ${textFontSize.toInt()}sp", Toast.LENGTH_SHORT).show()
