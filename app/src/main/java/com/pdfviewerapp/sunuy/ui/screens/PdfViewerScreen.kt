@@ -223,7 +223,7 @@ fun PdfViewerScreen(
     var isTiltToTurnPageEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_tilt_to_turn_page", false)) }
     var isReadingRulerEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_reading_ruler_enabled", false)) }
     var rulerYOffset by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_y", 400f)) }
-    var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 14f)) }
+    var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 13f)) }
     var isScreenDimmed by remember { mutableStateOf(false) }
     var isDarkThemeInverted by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -682,9 +682,9 @@ fun PdfViewerScreen(
 
     // Cycle text document font size
     fun cycleFontSize() {
-        val sizes = listOf(12f, 14f, 16f, 18f, 20f, 22f)
+        val sizes = listOf(11f, 13f, 15f, 17f, 19f, 21f)
         val currentIndex = sizes.indexOf(textFontSize)
-        // Fallback in case old textFontSize is not in the new list (e.g. 24f)
+        // Fallback in case old textFontSize is not in the new list (e.g. 22f)
         val nextIndex = if (currentIndex == -1) 1 else (currentIndex + 1) % sizes.size
         textFontSize = sizes[nextIndex]
         sharedPrefs.edit().putFloat("text_font_size", textFontSize).apply()
@@ -1319,7 +1319,7 @@ fun PdfViewerScreen(
                                 .verticalScroll(scrollState),
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = textFontSize.sp,
-                                lineHeight = (textFontSize * 1.5f).sp
+                                lineHeight = textFontSize.sp
                             ),
                             color = if (isDarkThemeInverted) Color.White else Color(0xFF1E293B)
                         )
@@ -2576,7 +2576,7 @@ fun PdfViewerScreen(
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
                                                 text = name,
-                                                style = MaterialTheme.typography.bodyMedium,
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
                                                 maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis
                                             )
