@@ -52,6 +52,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -234,7 +236,12 @@ fun PdfViewerScreen(
     var isReadingRulerEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_reading_ruler_enabled", false)) }
     var rulerYOffset by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_y", 400f)) }
     var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 13f)) }
-    var isScreenDimmed by remember { mutableStateOf(false) }
+    var isBrightnessMenuOpen by remember { mutableStateOf(false) }
+    var isAutoBrightness by remember { mutableStateOf(sharedPrefs.getBoolean("is_auto_brightness", true)) }
+    var brightnessLevel by remember { mutableStateOf(sharedPrefs.getFloat("brightness_level", 0.5f)) }
+    var isBlueLightFilterEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_bluelight_filter_enabled", false)) }
+    var blueLightOpacity by remember { mutableStateOf(sharedPrefs.getFloat("bluelight_opacity", 0.3f)) }
+    val isScreenDimmed = !isAutoBrightness || isBlueLightFilterEnabled
     var isDarkThemeInverted by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
@@ -703,20 +710,26 @@ fun PdfViewerScreen(
         Toast.makeText(context, "Font Size: ${textFontSize.toInt()}sp", Toast.LENGTH_SHORT).show()
     }
 
-    // Toggle Dim Screen Brightness Overlay
-    fun toggleScreenBrightness() {
-        val activity = context as? ComponentActivity ?: return
+    // Apply screen brightness on state changes
+    LaunchedEffect(isAutoBrightness, brightnessLevel) {
+        val activity = context as? ComponentActivity ?: return@LaunchedEffect
         val layoutParams = activity.window.attributes
-        if (isScreenDimmed) {
+        if (isAutoBrightness) {
             layoutParams.screenBrightness = -1f
-            isScreenDimmed = false
-            Toast.makeText(context, "Brightness: Default", Toast.LENGTH_SHORT).show()
         } else {
-            layoutParams.screenBrightness = 0.05f
-            isScreenDimmed = true
-            Toast.makeText(context, "Brightness: Dimmed", Toast.LENGTH_SHORT).show()
+            layoutParams.screenBrightness = brightnessLevel.coerceIn(0.01f, 1.0f)
         }
         activity.window.attributes = layoutParams
+    }
+
+    // Restore system brightness when leaving the document reader screen
+    DisposableEffect(Unit) {
+        onDispose {
+            val activity = context as? ComponentActivity ?: return@onDispose
+            val layoutParams = activity.window.attributes
+            layoutParams.screenBrightness = -1f
+            activity.window.attributes = layoutParams
+        }
     }
     
     // Save last page progress to database (debounced to avoid heavy DB writes during active scroll)
@@ -800,7 +813,8 @@ fun PdfViewerScreen(
         ))
     }
     
-    Scaffold(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
         topBar = {
             TopAppBar(
                 title = {
@@ -1163,7 +1177,7 @@ fun PdfViewerScreen(
                             }
                         }
                         "brightness" -> {
-                            TooltipIconButton(onClick = { toggleScreenBrightness() }, tooltipText = "Toggle Brightness Overlay") {
+                            TooltipIconButton(onClick = { isBrightnessMenuOpen = true }, tooltipText = "Toggle Brightness Overlay") {
                                 Icon(
                                     imageVector = Icons.Default.WbSunny,
                                     contentDescription = "Brightness Overlay",
@@ -3133,8 +3147,226 @@ fun PdfViewerScreen(
             }
         }
     }
-    
 
+    // --- Custom Brightness & Eye Care Overlays ---
+    if (isBlueLightFilterEnabled) {
+        Canvas(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            drawRect(
+                color = Color(0xFFFFA726).copy(alpha = blueLightOpacity)
+            )
+        }
+    }
+
+    if (isBrightnessMenuOpen) {
+        // Dismiss scrim overlay
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { isBrightnessMenuOpen = false }
+        )
+
+        // Brightness control panel card floating above the bottom bar
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 90.dp, start = 16.dp, end = 16.dp),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) {}, // Prevent dismiss when tapping card content
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF3E4756)), // Slate grey
+                elevation = CardDefaults.cardElevation(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Brightness:",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isAutoBrightness,
+                            onCheckedChange = {
+                                isAutoBrightness = it
+                                sharedPrefs.edit().putBoolean("is_auto_brightness", it).apply()
+                            },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFF03A9F4),
+                                uncheckedColor = Color.LightGray,
+                                checkmarkColor = Color.White
+                            )
+                        )
+                        Text(
+                            text = "Auto",
+                            color = Color.White,
+                            modifier = Modifier.padding(end = 8.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        Slider(
+                            value = brightnessLevel,
+                            onValueChange = {
+                                if (!isAutoBrightness) {
+                                    brightnessLevel = it
+                                    sharedPrefs.edit().putFloat("brightness_level", it).apply()
+                                }
+                            },
+                            valueRange = 0.05f..1.0f,
+                            enabled = !isAutoBrightness,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color(0xFF03A9F4),
+                                inactiveTrackColor = Color.Gray,
+                                disabledThumbColor = Color.Gray,
+                                disabledActiveTrackColor = Color.DarkGray
+                            )
+                        )
+
+                        IconButton(
+                            onClick = {
+                                if (!isAutoBrightness) {
+                                    brightnessLevel = (brightnessLevel - 0.05f).coerceAtLeast(0.05f)
+                                    sharedPrefs.edit().putFloat("brightness_level", brightnessLevel).apply()
+                                }
+                            },
+                            enabled = !isAutoBrightness
+                        ) {
+                            Text("-", color = if (isAutoBrightness) Color.Gray else Color.White, style = MaterialTheme.typography.titleLarge)
+                        }
+
+                        IconButton(
+                            onClick = {
+                                if (!isAutoBrightness) {
+                                    brightnessLevel = (brightnessLevel + 0.05f).coerceAtMost(1.0f)
+                                    sharedPrefs.edit().putFloat("brightness_level", brightnessLevel).apply()
+                                }
+                            },
+                            enabled = !isAutoBrightness
+                        ) {
+                            Text("+", color = if (isAutoBrightness) Color.Gray else Color.White, style = MaterialTheme.typography.titleLarge)
+                        }
+
+                        IconButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Cannot open display settings", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "System Brightness Settings",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isBlueLightFilterEnabled,
+                            onCheckedChange = {
+                                isBlueLightFilterEnabled = it
+                                sharedPrefs.edit().putBoolean("is_bluelight_filter_enabled", it).apply()
+                            },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFF03A9F4),
+                                uncheckedColor = Color.LightGray,
+                                checkmarkColor = Color.White
+                            )
+                        )
+                        Text(
+                            text = "Bluelight filter for eye care",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Opacity",
+                            color = Color.White,
+                            modifier = Modifier.width(65.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        Slider(
+                            value = blueLightOpacity,
+                            onValueChange = {
+                                if (isBlueLightFilterEnabled) {
+                                    blueLightOpacity = it
+                                    sharedPrefs.edit().putFloat("bluelight_opacity", it).apply()
+                                }
+                            },
+                            valueRange = 0.0f..0.8f,
+                            enabled = isBlueLightFilterEnabled,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color(0xFF03A9F4),
+                                inactiveTrackColor = Color.Gray,
+                                disabledThumbColor = Color.Gray,
+                                disabledActiveTrackColor = Color.DarkGray
+                            )
+                        )
+
+                        IconButton(
+                            onClick = {
+                                if (isBlueLightFilterEnabled) {
+                                    blueLightOpacity = (blueLightOpacity - 0.05f).coerceAtLeast(0.0f)
+                                    sharedPrefs.edit().putFloat("bluelight_opacity", blueLightOpacity).apply()
+                                }
+                            },
+                            enabled = isBlueLightFilterEnabled
+                        ) {
+                            Text("-", color = if (!isBlueLightFilterEnabled) Color.Gray else Color.White, style = MaterialTheme.typography.titleLarge)
+                        }
+
+                        IconButton(
+                            onClick = {
+                                if (isBlueLightFilterEnabled) {
+                                    blueLightOpacity = (blueLightOpacity + 0.05f).coerceAtMost(0.8f)
+                                    sharedPrefs.edit().putFloat("bluelight_opacity", blueLightOpacity).apply()
+                                }
+                            },
+                            enabled = isBlueLightFilterEnabled
+                        ) {
+                            Text("+", color = if (!isBlueLightFilterEnabled) Color.Gray else Color.White, style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
 }
 
 /**
