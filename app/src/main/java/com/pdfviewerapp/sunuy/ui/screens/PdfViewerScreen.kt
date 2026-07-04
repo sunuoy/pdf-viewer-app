@@ -2301,7 +2301,7 @@ fun PdfViewerScreen(
                             .padding(horizontal = 16.dp)
                             .height(55.dp)
                             .offset(y = with(density) { rulerYOffset.toDp() })
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(6.dp))
                             .background(Color(0x4D3E4756)) // Blue-slate grey with 30% opacity
                             .pointerInput(Unit) {
                                 detectDragGestures { change, dragAmount ->
@@ -2312,12 +2312,12 @@ fun PdfViewerScreen(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        // Horizontal green stripe in the middle
+                        // Horizontal focus stripe in the middle
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(12.dp)
-                                .background(Color(0xE684AF76)) // Deeper focus green stripe with 90% opacity
+                                .background(Color(0xE6E9FF32)) // Bright yellow-lime focus stripe with 90% opacity
                         )
                     }
                 }
