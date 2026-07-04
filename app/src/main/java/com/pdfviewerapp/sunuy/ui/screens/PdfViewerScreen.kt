@@ -2302,7 +2302,7 @@ fun PdfViewerScreen(
                             .height(55.dp)
                             .offset(y = with(density) { rulerYOffset.toDp() })
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xE63E4756)) // Deeper blue-slate grey with 90% opacity
+                            .background(Color(0x4D3E4756)) // Blue-slate grey with 30% opacity
                             .pointerInput(Unit) {
                                 detectDragGestures { change, dragAmount ->
                                     change.consume()
