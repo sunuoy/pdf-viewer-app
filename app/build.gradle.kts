@@ -86,6 +86,8 @@ dependencies {
   implementation("io.coil-kt:coil-compose:2.6.0")
   implementation("io.noties.markwon:core:4.6.2")
   implementation("org.jsoup:jsoup:1.17.2")
+  implementation("com.github.junrar:junrar:7.5.5")
+  implementation("com.github.chimenchen:jchmlib:v0.5.4")
 
 
 

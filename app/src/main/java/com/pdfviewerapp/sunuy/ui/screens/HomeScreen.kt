@@ -1137,8 +1137,27 @@ fun HomeScreen(
                     .padding(horizontal = 16.dp)
             ) {
                 // Pick File card
-                Card(
-                    onClick = { filePickerLauncher.launch(arrayOf("application/pdf", "text/plain", "text/markdown", "text/html", "text/*", "application/epub+zip")) },
+                 Card(
+                    onClick = { 
+                        filePickerLauncher.launch(
+                            arrayOf(
+                                "application/pdf", 
+                                "text/plain", 
+                                "text/markdown", 
+                                "text/html", 
+                                "text/*", 
+                                "application/epub+zip",
+                                "application/x-cbz",
+                                "application/x-cbr",
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                "application/vnd.oasis.opendocument.text",
+                                "application/rtf",
+                                "text/rtf",
+                                "application/x-umd",
+                                "application/x-chm"
+                            )
+                        ) 
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(130.dp)

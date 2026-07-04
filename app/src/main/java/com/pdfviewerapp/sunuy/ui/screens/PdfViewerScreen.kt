@@ -122,6 +122,8 @@ fun PdfViewerScreen(
     var documentName by remember { mutableStateOf("Document") }
     var isTextDocument by remember { mutableStateOf(false) }
     var textDocumentContent by remember { mutableStateOf<String?>(null) }
+    var isComicBook by remember { mutableStateOf(false) }
+    var comicPages by remember { mutableStateOf<List<com.pdfviewerapp.sunuy.services.ComicService.ComicPage>>(emptyList()) }
     
     // Page dimensions cache (pageIndex -> Pair(width, height))
     val pageSizes = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
@@ -157,6 +159,12 @@ fun PdfViewerScreen(
     // UI control states
     val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
     var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
+    var showAutoScrollButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_auto_scroll", true)) }
+    var showScrollDirectionButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_scroll_dir", true)) }
+    var showSearchButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_search", true)) }
+    var showTtsButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_tts", true)) }
+    var showTranslateButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_translate", true)) }
+    var isCustomizeReaderBarDialogOpen by remember { mutableStateOf(false) }
     var isDarkThemeInverted by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
@@ -205,6 +213,10 @@ fun PdfViewerScreen(
 
     fun startTtsForPage(pageIndex: Int) {
         if (isTtsLoading) return
+        if (isComicBook) {
+            Toast.makeText(context, "TTS is not supported on comic book archives", Toast.LENGTH_SHORT).show()
+            return
+        }
         isTtsLoading = true
         isTtsActive = true
         scope.launch {
@@ -363,19 +375,23 @@ fun PdfViewerScreen(
         isTranslatingMap[pageIndex] = true
         scope.launch {
             try {
-                val text = if (isTextDocument) {
-                    textDocumentContent ?: ""
+                if (isComicBook) {
+                    activeTranslations[pageIndex] = "Translation is not supported on comic books."
                 } else {
-                    pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), pageIndex)
-                }
-                if (text.isNotBlank()) {
-                    val translated = translationService.translate(
-                        text = text,
-                        targetLangCode = targetLanguageCode
-                    )
-                    activeTranslations[pageIndex] = translated
-                } else {
-                    activeTranslations[pageIndex] = "No readable text found on this page."
+                    val text = if (isTextDocument) {
+                        textDocumentContent ?: ""
+                    } else {
+                        pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), pageIndex)
+                    }
+                    if (text.isNotBlank()) {
+                        val translated = translationService.translate(
+                            text = text,
+                            targetLangCode = targetLanguageCode
+                        )
+                        activeTranslations[pageIndex] = translated
+                    } else {
+                        activeTranslations[pageIndex] = "No readable text found on this page."
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("PdfViewerScreen", "Error translating page $pageIndex", e)
@@ -426,20 +442,72 @@ fun PdfViewerScreen(
                 documentName = getFileName(context, uri) ?: "Document"
                 val lowerName = documentName.lowercase()
                 
-                if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") || lowerName.endsWith(".html") || lowerName.endsWith(".htm") || lowerName.endsWith(".epub")) {
+                val isTextDoc = lowerName.endsWith(".txt") || lowerName.endsWith(".md") || 
+                                lowerName.endsWith(".html") || lowerName.endsWith(".htm") || 
+                                lowerName.endsWith(".epub") || lowerName.endsWith(".docx") || 
+                                lowerName.endsWith(".odt") || lowerName.endsWith(".rtf") || 
+                                lowerName.endsWith(".umd") || lowerName.endsWith(".chm")
+                
+                val isComic = lowerName.endsWith(".cbz") || lowerName.endsWith(".cbr")
+                
+                val file = if (uri.scheme == "file") {
+                    File(uri.path ?: "")
+                } else {
+                    val tempFile = File(context.cacheDir, "temp_render_${System.currentTimeMillis()}_$documentName")
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        FileOutputStream(tempFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    tempFile
+                }
+                
+                if (isTextDoc) {
                     isTextDocument = true
-                    val content = if (lowerName.endsWith(".epub")) {
-                        com.pdfviewerapp.sunuy.services.EpubService.parseEpubToText(context, uri)
-                    } else if (uri.scheme == "file") {
-                        File(uri.path ?: "").readText(Charsets.UTF_8)
-                    } else {
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            input.bufferedReader(Charsets.UTF_8).readText()
-                        } ?: ""
+                    isComicBook = false
+                    val content = when {
+                        lowerName.endsWith(".epub") -> {
+                            com.pdfviewerapp.sunuy.services.EpubService.parseEpubToText(context, uri)
+                        }
+                        lowerName.endsWith(".docx") -> {
+                            com.pdfviewerapp.sunuy.services.DocxService.extractText(file)
+                        }
+                        lowerName.endsWith(".odt") -> {
+                            com.pdfviewerapp.sunuy.services.OdtService.extractText(file)
+                        }
+                        lowerName.endsWith(".rtf") -> {
+                            com.pdfviewerapp.sunuy.services.RtfService.extractText(file)
+                        }
+                        lowerName.endsWith(".umd") -> {
+                            com.pdfviewerapp.sunuy.services.UmdService.extractText(file)
+                        }
+                        lowerName.endsWith(".chm") -> {
+                            com.pdfviewerapp.sunuy.services.ChmService.extractText(file)
+                        }
+                        else -> {
+                            file.readText(Charsets.UTF_8)
+                        }
+                    }
+                    if (uri.scheme == "content" && file.name.startsWith("temp_render_")) {
+                        try { file.delete() } catch(e: Exception) {}
                     }
                     textDocumentContent = content
                     pageCount = 1
+                } else if (isComic) {
+                    isTextDocument = false
+                    isComicBook = true
+                    val pages = com.pdfviewerapp.sunuy.services.ComicService.getPages(file)
+                    comicPages = pages
+                    pageCount = pages.size
+                    for (i in pages.indices) {
+                        pageSizes[i] = Pair(768, 1024)
+                    }
+                    if (uri.scheme == "content" && file.name.startsWith("temp_render_")) {
+                        try { file.delete() } catch(e: Exception) {}
+                    }
                 } else {
+                    isTextDocument = false
+                    isComicBook = false
                     try {
                         pdfRenderer?.close()
                         parcelFileDescriptor?.close()
@@ -457,7 +525,6 @@ fun PdfViewerScreen(
                         pdfRenderer = renderer
                         pageCount = renderer.pageCount
                         
-                        // Pre-fill page sizes under lock
                         rendererMutex.withLock {
                             for (i in 0 until renderer.pageCount) {
                                 val page = renderer.openPage(i)
@@ -466,17 +533,15 @@ fun PdfViewerScreen(
                             }
                         }
                         
-                        // Initialize PDFBox
                         PdfTextService.init(context)
-                        
-                        // Restore last read position (only on initial load)
-                        if (pdfReloadTrigger == 0) {
-                            val recent = database.recentPdfDao().getRecentPdfByPath(pdfPath)
-                            if (recent != null && recent.lastPage < renderer.pageCount) {
-                                withContext(Dispatchers.Main) {
-                                    listState.scrollToItem(recent.lastPage)
-                                }
-                            }
+                    }
+                }
+
+                if (pdfReloadTrigger == 0) {
+                    val recent = database.recentPdfDao().getRecentPdfByPath(pdfPath)
+                    if (recent != null && recent.lastPage < pageCount) {
+                        withContext(Dispatchers.Main) {
+                            listState.scrollToItem(recent.lastPage)
                         }
                     }
                 }
@@ -510,7 +575,7 @@ fun PdfViewerScreen(
     
     // Search handler
     LaunchedEffect(searchQuery) {
-        if (searchQuery.length >= 3) {
+        if (searchQuery.length >= 3 && !isTextDocument && !isComicBook) {
             searchMatches = pdfTextService.searchInsidePdf(context, Uri.parse(pdfPath), searchQuery)
             currentMatchIndex = if (searchMatches.isNotEmpty()) 0 else -1
         } else {
@@ -632,6 +697,14 @@ fun PdfViewerScreen(
                             expanded = isMenuExpanded,
                             onDismissRequest = { isMenuExpanded = false }
                         ) {
+                            // --- PDF & Document Options ---
+                            Text(
+                                text = "PDF & Document Options",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
                             DropdownMenuItem(
                                 text = { Text("Open Bookmarks") },
                                 onClick = {
@@ -648,7 +721,7 @@ fun PdfViewerScreen(
                                 },
                                 leadingIcon = { Icon(Icons.Default.BorderColor, contentDescription = null) }
                             )
-                            if (!isTextDocument) {
+                            if (!isTextDocument && !isComicBook) {
                                 DropdownMenuItem(
                                     text = { Text("Edit PDF Text") },
                                     onClick = {
@@ -658,47 +731,160 @@ fun PdfViewerScreen(
                                     leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
                                 )
                             }
-                            DropdownMenuItem(
-                                text = { Text("Edit Page / Document") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    if (isTextDocument) {
-                                        editorContent = textDocumentContent ?: ""
-                                        isEditorActive = true
-                                    } else {
-                                        scope.launch {
-                                            isEditorLoading = true
-                                            try {
-                                                val pageText = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), currentPageIndex)
-                                                editorContent = pageText
-                                                isEditorActive = true
-                                            } catch (e: Exception) {
-                                                Log.e("PdfViewerScreen", "Failed to extract page text", e)
-                                                Toast.makeText(context, "Failed to extract text for editing", Toast.LENGTH_SHORT).show()
-                                            } finally {
-                                                isEditorLoading = false
+                            if (!isComicBook) {
+                                DropdownMenuItem(
+                                    text = { Text("Edit Page / Document") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        if (isTextDocument) {
+                                            editorContent = textDocumentContent ?: ""
+                                            isEditorActive = true
+                                        } else {
+                                            scope.launch {
+                                                isEditorLoading = true
+                                                try {
+                                                    val pageText = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), currentPageIndex)
+                                                    editorContent = pageText
+                                                    isEditorActive = true
+                                                } catch (e: Exception) {
+                                                    Log.e("PdfViewerScreen", "Failed to extract page text", e)
+                                                    Toast.makeText(context, "Failed to extract text for editing", Toast.LENGTH_SHORT).show()
+                                                } finally {
+                                                    isEditorLoading = false
+                                                }
                                             }
                                         }
+                                    },
+                                    leadingIcon = {
+                                        if (isEditorLoading) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp
+                                            )
+                                        } else {
+                                            Icon(Icons.Default.EditNote, contentDescription = null)
+                                        }
                                     }
-                                },
-                                leadingIcon = {
-                                    if (isEditorLoading) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
-                                            strokeWidth = 2.dp
-                                        )
-                                    } else {
-                                        Icon(Icons.Default.EditNote, contentDescription = null)
-                                    }
-                                }
-                            )
+                                )
+                            }
+                            val shareLabel = when {
+                                isComicBook -> "Share Comic"
+                                isTextDocument -> "Share Document"
+                                else -> "Share PDF"
+                            }
                             DropdownMenuItem(
-                                text = { Text("Share PDF") },
+                                text = { Text(shareLabel) },
                                 onClick = {
                                     isMenuExpanded = false
                                     sharePdf(context, Uri.parse(pdfPath))
                                 },
                                 leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
+                            )
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                            // --- Control Options ---
+                            Text(
+                                text = "Control Options",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (isAutoScrollActive) "Stop Auto Scroll" else "Start Auto Scroll") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    isAutoScrollActive = !isAutoScrollActive
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isAutoScrollActive) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = null
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (isVerticalScroll) "Switch to Horizontal" else "Switch to Vertical") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    isVerticalScroll = !isVerticalScroll
+                                    sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isVerticalScroll) Icons.Default.SwapHoriz else Icons.Default.SwapVert,
+                                        contentDescription = null
+                                    )
+                                }
+                            )
+                            if (!isComicBook) {
+                                DropdownMenuItem(
+                                    text = { Text(if (isTtsActive) "Stop TTS Reading" else "Start TTS Reading") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        if (isTtsActive) {
+                                            ttsService.stop()
+                                            isTtsActive = false
+                                        } else {
+                                            startTtsForPage(currentPageIndex)
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (isTtsActive) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                            // --- Misc Options ---
+                            Text(
+                                text = "Misc Options",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (isDarkThemeInverted) "Light Theme" else "Dark Theme Inversion") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    isDarkThemeInverted = !isDarkThemeInverted
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = if (isDarkThemeInverted) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                        contentDescription = null
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Translation Settings") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    isTranslationBarActive = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Translate, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Offline Translation Models") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    isModelManagerOpen = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Customize Reader Bar") },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    isCustomizeReaderBarDialogOpen = true
+                                },
+                                leadingIcon = { Icon(Icons.Default.Build, contentDescription = null) }
                             )
                         }
                     }
@@ -730,52 +916,62 @@ fun PdfViewerScreen(
                     
                     // Reader / Translator Pane / Auto-Scroll Toggle
                     Row {
-                        IconButton(onClick = { isAutoScrollActive = !isAutoScrollActive }) {
-                            Icon(
-                                imageVector = if (isAutoScrollActive) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
-                                contentDescription = "Auto Scroll",
-                                tint = if (isAutoScrollActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        IconButton(onClick = { 
-                            isVerticalScroll = !isVerticalScroll
-                            sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
-                        }) {
-                            Icon(
-                                imageVector = if (isVerticalScroll) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
-                                contentDescription = "Scroll Direction",
-                                tint = if (isVerticalScroll) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        IconButton(onClick = {
-                            isSearchActive = !isSearchActive
-                            if (!isSearchActive) {
-                                searchQuery = ""
+                        if (showAutoScrollButton) {
+                            IconButton(onClick = { isAutoScrollActive = !isAutoScrollActive }) {
+                                Icon(
+                                    imageVector = if (isAutoScrollActive) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
+                                    contentDescription = "Auto Scroll",
+                                    tint = if (isAutoScrollActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
                             }
-                        }) {
-                            Icon(imageVector = Icons.Default.Search, contentDescription = "Search text")
                         }
-                        IconButton(onClick = {
-                            if (isTtsActive) {
-                                ttsService.stop()
-                                isTtsActive = false
-                            } else {
-                                startTtsForPage(currentPageIndex)
+                        if (showScrollDirectionButton) {
+                            IconButton(onClick = { 
+                                isVerticalScroll = !isVerticalScroll
+                                sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
+                            }) {
+                                Icon(
+                                    imageVector = if (isVerticalScroll) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
+                                    contentDescription = "Scroll Direction",
+                                    tint = if (isVerticalScroll) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
                             }
-                        }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = "TTS Read Page",
-                                tint = if (isTtsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
                         }
-                        IconButton(onClick = {
-                            isTranslationBarActive = !isTranslationBarActive
-                            if (isTranslationBarActive) {
-                                translatePage(currentPageIndex)
+                        if (showSearchButton) {
+                            IconButton(onClick = {
+                                isSearchActive = !isSearchActive
+                                if (!isSearchActive) {
+                                    searchQuery = ""
+                                }
+                            }) {
+                                Icon(imageVector = Icons.Default.Search, contentDescription = "Search text")
                             }
-                        }) {
-                            Icon(imageVector = Icons.Default.Translate, contentDescription = "Translate/TTS Pane")
+                        }
+                        if (showTtsButton && !isComicBook) {
+                            IconButton(onClick = {
+                                if (isTtsActive) {
+                                    ttsService.stop()
+                                    isTtsActive = false
+                                } else {
+                                    startTtsForPage(currentPageIndex)
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = "TTS Read Page",
+                                    tint = if (isTtsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        if (showTranslateButton) {
+                            IconButton(onClick = {
+                                isTranslationBarActive = !isTranslationBarActive
+                                if (isTranslationBarActive) {
+                                    translatePage(currentPageIndex)
+                                }
+                            }) {
+                                Icon(imageVector = Icons.Default.Translate, contentDescription = "Translate/TTS Pane")
+                            }
                         }
                     }
                 }
@@ -838,7 +1034,7 @@ fun PdfViewerScreen(
                         }
                     }
                 }
-            } else if (pdfRenderer != null && pageCount > 0) {
+            } else if ((pdfRenderer != null || isComicBook) && pageCount > 0) {
                 val configuration = LocalConfiguration.current
                 val screenWidth = configuration.screenWidthDp.dp
                 
@@ -850,17 +1046,29 @@ fun PdfViewerScreen(
                     LaunchedEffect(index, pdfReloadTrigger) {
                         if (bitmap == null) {
                             withContext(Dispatchers.IO) {
-                                pdfRenderer?.let { renderer ->
-                                    try {
-                                        val pageSize = pageSizes[index] ?: Pair(1, 1)
-                                        val screenWidthPx = with(density) { screenWidth.toPx() }
-                                        val dynamicScale = (screenWidthPx / pageSize.first.toFloat()).coerceIn(1.5f, 2.5f)
-                                        
-                                        val bmp = renderPageToBitmap(renderer, index, dynamicScale, rendererMutex)
-                                        bitmapCache.put(index, bmp)
-                                        bitmap = bmp
-                                    } catch (e: Exception) {
-                                        Log.e("PdfViewerScreen", "Error rendering page $index", e)
+                                if (isComicBook) {
+                                    if (index in comicPages.indices) {
+                                        val page = comicPages[index]
+                                        val bmp = com.pdfviewerapp.sunuy.services.ComicService.loadPageBitmap(page)
+                                        if (bmp != null) {
+                                            bitmapCache.put(index, bmp)
+                                            pageSizes[index] = Pair(bmp.width, bmp.height)
+                                            bitmap = bmp
+                                        }
+                                    }
+                                } else {
+                                    pdfRenderer?.let { renderer ->
+                                        try {
+                                            val pageSize = pageSizes[index] ?: Pair(1, 1)
+                                            val screenWidthPx = with(density) { screenWidth.toPx() }
+                                            val dynamicScale = (screenWidthPx / pageSize.first.toFloat()).coerceIn(1.5f, 2.5f)
+                                            
+                                            val bmp = renderPageToBitmap(renderer, index, dynamicScale, rendererMutex)
+                                            bitmapCache.put(index, bmp)
+                                            bitmap = bmp
+                                        } catch (e: Exception) {
+                                            Log.e("PdfViewerScreen", "Error rendering page $index", e)
+                                        }
                                     }
                                 }
                             }
@@ -1867,6 +2075,127 @@ fun PdfViewerScreen(
                 )
             }
 
+            // Customize Reader Bar Dialog
+            if (isCustomizeReaderBarDialogOpen) {
+                AlertDialog(
+                    onDismissRequest = { isCustomizeReaderBarDialogOpen = false },
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Build,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text("Customize Reader Bar", style = MaterialTheme.typography.titleMedium)
+                        }
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "Select which quick-action buttons are shown in the bottom reader bar.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            
+                            // Auto Scroll
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Auto Scroll Toggle")
+                                Switch(
+                                    checked = showAutoScrollButton,
+                                    onCheckedChange = { checked ->
+                                        showAutoScrollButton = checked
+                                        sharedPrefs.edit().putBoolean("show_btn_auto_scroll", checked).apply()
+                                    }
+                                )
+                            }
+                            
+                            // Scroll Direction
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Scroll Direction")
+                                Switch(
+                                    checked = showScrollDirectionButton,
+                                    onCheckedChange = { checked ->
+                                        showScrollDirectionButton = checked
+                                        sharedPrefs.edit().putBoolean("show_btn_scroll_dir", checked).apply()
+                                    }
+                                )
+                            }
+                            
+                            // Search
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Search Panel")
+                                Switch(
+                                    checked = showSearchButton,
+                                    onCheckedChange = { checked ->
+                                        showSearchButton = checked
+                                        sharedPrefs.edit().putBoolean("show_btn_search", checked).apply()
+                                    }
+                                )
+                            }
+                            
+                            // TTS
+                            if (!isComicBook) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("TTS Speech Reader")
+                                    Switch(
+                                        checked = showTtsButton,
+                                        onCheckedChange = { checked ->
+                                            showTtsButton = checked
+                                            sharedPrefs.edit().putBoolean("show_btn_tts", checked).apply()
+                                        }
+                                    )
+                                }
+                            }
+                            
+                            // Translate
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Translate Panel")
+                                Switch(
+                                    checked = showTranslateButton,
+                                    onCheckedChange = { checked ->
+                                        showTranslateButton = checked
+                                        sharedPrefs.edit().putBoolean("show_btn_translate", checked).apply()
+                                    }
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { isCustomizeReaderBarDialogOpen = false }) {
+                            Text("Done")
+                        }
+                    }
+                )
+            }
+
             // Persistent Highlights Manager Dialog
             if (isHighlightManagerOpen) {
                 var phraseInput by remember { mutableStateOf("") }
@@ -2552,12 +2881,24 @@ fun sharePdf(context: Context, uri: Uri) {
         } else {
             uri
         }
+        val extension = shareUri.toString().substringAfterLast('.', "").lowercase()
+        val mimeType = when (extension) {
+            "epub" -> "application/epub+zip"
+            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "odt" -> "application/vnd.oasis.opendocument.text"
+            "rtf" -> "application/rtf"
+            "umd" -> "application/x-umd"
+            "chm" -> "application/x-chm"
+            "cbz" -> "application/x-cbz"
+            "cbr" -> "application/x-cbr"
+            else -> "application/pdf"
+        }
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/pdf"
+            type = mimeType
             putExtra(Intent.EXTRA_STREAM, shareUri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(shareIntent, "Share PDF File"))
+        context.startActivity(Intent.createChooser(shareIntent, "Share Document"))
     } catch (e: Exception) {
         Toast.makeText(context, "Cannot share this file", Toast.LENGTH_SHORT).show()
     }

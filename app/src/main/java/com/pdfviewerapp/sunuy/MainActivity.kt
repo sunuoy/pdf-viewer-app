@@ -39,20 +39,15 @@ class MainActivity : ComponentActivity() {
     val action = intent?.action
     val type = intent?.type
     
-    val isSupportedType = type == "application/pdf" || 
-                          type == "application/epub+zip" || 
-                          type == "text/plain" || 
-                          type == "text/markdown" || 
-                          type == "text/html" ||
-                          type?.startsWith("text/") == true
+    val isSupported = isUriSupported(intent?.data, type)
     
-    if (Intent.ACTION_VIEW == action && isSupportedType) {
+    if (Intent.ACTION_VIEW == action && isSupported) {
       intent.data?.let { uri ->
         val internalUri = copyUriToInternalStorage(uri)
         sharedPdfUri = internalUri.toString()
         persistUriAndInsertRecent(internalUri)
       }
-    } else if (Intent.ACTION_SEND == action && isSupportedType) {
+    } else if (Intent.ACTION_SEND == action && isSupported) {
       (intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri)?.let { uri ->
         val internalUri = copyUriToInternalStorage(uri)
         sharedPdfUri = internalUri.toString()
@@ -85,19 +80,14 @@ class MainActivity : ComponentActivity() {
     setIntent(intent)
     val action = intent.action
     val type = intent.type
-    val isSupportedType = type == "application/pdf" || 
-                          type == "application/epub+zip" || 
-                          type == "text/plain" || 
-                          type == "text/markdown" || 
-                          type == "text/html" ||
-                          type?.startsWith("text/") == true
+    val isSupported = isUriSupported(intent.data, type)
                           
-    if (Intent.ACTION_VIEW == action && isSupportedType) {
+    if (Intent.ACTION_VIEW == action && isSupported) {
       intent.data?.let { uri ->
         val internalUri = copyUriToInternalStorage(uri)
         recreate()
       }
-    } else if (Intent.ACTION_SEND == action && isSupportedType) {
+    } else if (Intent.ACTION_SEND == action && isSupported) {
       (intent.getParcelableExtra<Parcelable>(Intent.EXTRA_STREAM) as? Uri)?.let { uri ->
         val internalUri = copyUriToInternalStorage(uri)
         recreate()
@@ -105,9 +95,37 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  private fun isUriSupported(uri: Uri?, type: String?): Boolean {
+    if (type == "application/pdf" || 
+        type == "application/epub+zip" || 
+        type == "text/plain" || 
+        type == "text/markdown" || 
+        type == "text/html" ||
+        type == "application/x-cbz" ||
+        type == "application/x-cbr" ||
+        type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+        type == "application/vnd.oasis.opendocument.text" ||
+        type == "application/rtf" ||
+        type == "text/rtf" ||
+        type == "application/x-umd" ||
+        type == "application/x-chm" ||
+        type?.startsWith("text/") == true) {
+      return true
+    }
+    val path = uri?.path ?: return false
+    val ext = path.substringAfterLast('.', "").lowercase()
+    return ext == "pdf" || ext == "epub" || ext == "txt" || ext == "md" || ext == "html" || ext == "htm" ||
+           ext == "docx" || ext == "odt" || ext == "rtf" || ext == "umd" || ext == "chm" || ext == "cbz" || ext == "cbr"
+  }
+
   private fun copyUriToInternalStorage(uri: Uri): Uri {
     try {
-      val name = getFileName(applicationContext, uri) ?: (if (uri.toString().contains(".epub", ignoreCase = true)) "Document.epub" else "Document.pdf")
+      var name = getFileName(applicationContext, uri)
+      if (name == null) {
+        val path = uri.path ?: ""
+        val ext = path.substringAfterLast('.', "")
+        name = if (ext.isNotEmpty()) "Document.$ext" else "Document.pdf"
+      }
       val destFile = File(filesDir, "imported_${System.currentTimeMillis()}_$name")
       contentResolver.openInputStream(uri)?.use { input ->
         FileOutputStream(destFile).use { output ->
