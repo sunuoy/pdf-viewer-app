@@ -235,6 +235,11 @@ fun PdfViewerScreen(
     var isTiltToTurnPageEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_tilt_to_turn_page", false)) }
     var isReadingRulerEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_reading_ruler_enabled", false)) }
     var rulerYOffset by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_y", 400f)) }
+    var rulerHeight by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_height", 55f)) }
+    var rulerFocusStripeHeight by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_stripe_height", 12f)) }
+    var rulerColorStripe by remember { mutableStateOf(sharedPrefs.getInt("reading_ruler_stripe_color", 0xE6E9FF32.toInt())) }
+    var rulerOpacityOuter by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_opacity_outer", 0.3f)) }
+    var isRulerSettingsOpen by remember { mutableStateOf(false) }
     var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 13f)) }
     var isBrightnessMenuOpen by remember { mutableStateOf(false) }
     var isAutoBrightness by remember { mutableStateOf(sharedPrefs.getBoolean("is_auto_brightness", true)) }
@@ -245,6 +250,9 @@ fun PdfViewerScreen(
     var isDarkThemeInverted by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
+    var isPdfOptionsExpanded by remember { mutableStateOf(true) }
+    var isControlOptionsExpanded by remember { mutableStateOf(true) }
+    var isMiscOptionsExpanded by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
     var searchMatches by remember { mutableStateOf<List<SearchMatch>>(emptyList()) }
     var currentMatchIndex by remember { mutableStateOf(-1) }
@@ -881,194 +889,250 @@ fun PdfViewerScreen(
                             onDismissRequest = { isMenuExpanded = false }
                         ) {
                             // --- PDF & Document Options ---
-                            Text(
-                                text = "PDF & Document Options",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Open Bookmarks") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    onNavigateToBookmarks()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Bookmarks, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Text Highlights") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    isHighlightManagerOpen = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.BorderColor, contentDescription = null) }
-                            )
-                            if (!isTextDocument && !isComicBook) {
-                                DropdownMenuItem(
-                                    text = { Text("Edit PDF Text") },
-                                    onClick = {
-                                        isMenuExpanded = false
-                                        isPdfWordEditorOpen = true
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isPdfOptionsExpanded = !isPdfOptionsExpanded }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "PDF & Document Options",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = if (isPdfOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (isPdfOptionsExpanded) "Collapse" else "Expand",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
-                            if (!isComicBook) {
+                            if (isPdfOptionsExpanded) {
                                 DropdownMenuItem(
-                                    text = { Text("Edit Page / Document") },
+                                    text = { Text("Open Bookmarks") },
                                     onClick = {
                                         isMenuExpanded = false
-                                        if (isTextDocument) {
-                                            editorContent = textDocumentContent ?: ""
-                                            isEditorActive = true
-                                        } else {
-                                            scope.launch {
-                                                isEditorLoading = true
-                                                try {
-                                                    val pageText = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), currentPageIndex)
-                                                    editorContent = pageText
-                                                    isEditorActive = true
-                                                } catch (e: Exception) {
-                                                    Log.e("PdfViewerScreen", "Failed to extract page text", e)
-                                                    Toast.makeText(context, "Failed to extract text for editing", Toast.LENGTH_SHORT).show()
-                                                } finally {
-                                                    isEditorLoading = false
+                                        onNavigateToBookmarks()
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Bookmarks, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Text Highlights") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        isHighlightManagerOpen = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.BorderColor, contentDescription = null) }
+                                )
+                                if (!isTextDocument && !isComicBook) {
+                                    DropdownMenuItem(
+                                        text = { Text("Edit PDF Text") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            isPdfWordEditorOpen = true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                                    )
+                                }
+                                if (!isComicBook) {
+                                    DropdownMenuItem(
+                                        text = { Text("Edit Page / Document") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            if (isTextDocument) {
+                                                editorContent = textDocumentContent ?: ""
+                                                isEditorActive = true
+                                            } else {
+                                                scope.launch {
+                                                    isEditorLoading = true
+                                                    try {
+                                                        val pageText = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), currentPageIndex)
+                                                        editorContent = pageText
+                                                        isEditorActive = true
+                                                    } catch (e: Exception) {
+                                                        Log.e("PdfViewerScreen", "Failed to extract page text", e)
+                                                        Toast.makeText(context, "Failed to extract text for editing", Toast.LENGTH_SHORT).show()
+                                                    } finally {
+                                                        isEditorLoading = false
+                                                    }
                                                 }
                                             }
+                                        },
+                                        leadingIcon = {
+                                            if (isEditorLoading) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(20.dp),
+                                                    strokeWidth = 2.dp
+                                                )
+                                            } else {
+                                                Icon(Icons.Default.EditNote, contentDescription = null)
+                                            }
                                         }
+                                    )
+                                }
+                                val shareLabel = when {
+                                    isComicBook -> "Share Comic"
+                                    isTextDocument -> "Share Document"
+                                    else -> "Share PDF"
+                                }
+                                DropdownMenuItem(
+                                    text = { Text(shareLabel) },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        sharePdf(context, Uri.parse(pdfPath))
                                     },
-                                    leadingIcon = {
-                                        if (isEditorLoading) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(20.dp),
-                                                strokeWidth = 2.dp
-                                            )
-                                        } else {
-                                            Icon(Icons.Default.EditNote, contentDescription = null)
-                                        }
-                                    }
+                                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
                                 )
                             }
-                            val shareLabel = when {
-                                isComicBook -> "Share Comic"
-                                isTextDocument -> "Share Document"
-                                else -> "Share PDF"
-                            }
-                            DropdownMenuItem(
-                                text = { Text(shareLabel) },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    sharePdf(context, Uri.parse(pdfPath))
-                                },
-                                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                            )
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                             // --- Control Options ---
-                            Text(
-                                text = "Control Options",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (isAutoScrollActive) "Stop Auto Scroll" else "Start Auto Scroll") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    isAutoScrollActive = !isAutoScrollActive
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (isAutoScrollActive) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = null
-                                    )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (isVerticalScroll) "Switch to Horizontal" else "Switch to Vertical") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    isVerticalScroll = !isVerticalScroll
-                                    sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (isVerticalScroll) Icons.Default.SwapHoriz else Icons.Default.SwapVert,
-                                        contentDescription = null
-                                    )
-                                }
-                            )
-                            if (!isComicBook) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isControlOptionsExpanded = !isControlOptionsExpanded }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Control Options",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = if (isControlOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (isControlOptionsExpanded) "Collapse" else "Expand",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            if (isControlOptionsExpanded) {
                                 DropdownMenuItem(
-                                    text = { Text(if (isTtsActive) "Stop TTS Reading" else "Start TTS Reading") },
+                                    text = { Text(if (isAutoScrollActive) "Stop Auto Scroll" else "Start Auto Scroll") },
                                     onClick = {
                                         isMenuExpanded = false
-                                        if (isTtsActive) {
-                                            ttsService.stop()
-                                            isTtsActive = false
-                                        } else {
-                                            startTtsForPage(currentPageIndex)
-                                        }
+                                        isAutoScrollActive = !isAutoScrollActive
                                     },
                                     leadingIcon = {
                                         Icon(
-                                            imageVector = if (isTtsActive) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                            imageVector = if (isAutoScrollActive) Icons.Default.Pause else Icons.Default.PlayArrow,
                                             contentDescription = null
                                         )
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = { Text(if (isVerticalScroll) "Switch to Horizontal" else "Switch to Vertical") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        isVerticalScroll = !isVerticalScroll
+                                        sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (isVerticalScroll) Icons.Default.SwapHoriz else Icons.Default.SwapVert,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                                if (!isComicBook) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (isTtsActive) "Stop TTS Reading" else "Start TTS Reading") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            if (isTtsActive) {
+                                                ttsService.stop()
+                                                isTtsActive = false
+                                            } else {
+                                                startTtsForPage(currentPageIndex)
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (isTtsActive) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    )
+                                }
                             }
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                             // --- Misc Options ---
-                            Text(
-                                text = "Misc Options",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (isDarkThemeInverted) "Light Theme" else "Dark Theme Inversion") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    isDarkThemeInverted = !isDarkThemeInverted
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (isDarkThemeInverted) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                        contentDescription = null
-                                    )
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Translation Settings") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    isTranslationBarActive = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Translate, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Offline Translation Models") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    isModelManagerOpen = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Customize Reader Bar") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    isCustomizeReaderBarDialogOpen = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Build, contentDescription = null) }
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isMiscOptionsExpanded = !isMiscOptionsExpanded }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Misc Options",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = if (isMiscOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (isMiscOptionsExpanded) "Collapse" else "Expand",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            if (isMiscOptionsExpanded) {
+                                DropdownMenuItem(
+                                    text = { Text(if (isDarkThemeInverted) "Light Theme" else "Dark Theme Inversion") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        isDarkThemeInverted = !isDarkThemeInverted
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (isDarkThemeInverted) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                            contentDescription = null
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Translation Settings") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        isTranslationBarActive = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Translate, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Offline Translation Models") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        isModelManagerOpen = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Ruler Settings") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        isRulerSettingsOpen = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Tune, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Customize Reader Bar") },
+                                    onClick = {
+                                        isMenuExpanded = false
+                                        isCustomizeReaderBarDialogOpen = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Build, contentDescription = null) }
+                                )
+                            }
                         }
                     }
                 }
@@ -1213,11 +1277,17 @@ fun PdfViewerScreen(
                             }
                         }
                         "ruler" -> {
-                            TooltipIconButton(onClick = {
-                                isReadingRulerEnabled = !isReadingRulerEnabled
-                                sharedPrefs.edit().putBoolean("is_reading_ruler_enabled", isReadingRulerEnabled).apply()
-                                Toast.makeText(context, "Ruler: ${if (isReadingRulerEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
-                            }, tooltipText = "Ruler") {
+                            TooltipIconButton(
+                                onClick = {
+                                    isReadingRulerEnabled = !isReadingRulerEnabled
+                                    sharedPrefs.edit().putBoolean("is_reading_ruler_enabled", isReadingRulerEnabled).apply()
+                                    Toast.makeText(context, "Ruler: ${if (isReadingRulerEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                                },
+                                onDoubleClick = {
+                                    isRulerSettingsOpen = true
+                                },
+                                tooltipText = "Ruler"
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.HorizontalSplit,
                                     contentDescription = "Ruler",
@@ -2362,10 +2432,10 @@ fun PdfViewerScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
-                            .height(55.dp)
+                            .height(rulerHeight.dp)
                             .offset(y = with(density) { rulerYOffset.toDp() })
                             .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0x4D3E4756)) // Blue-slate grey with 30% opacity
+                            .background(Color(0xFF3E4756).copy(alpha = rulerOpacityOuter))
                             .pointerInput(Unit) {
                                 detectDragGestures { change, dragAmount ->
                                     change.consume()
@@ -2379,8 +2449,8 @@ fun PdfViewerScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(12.dp)
-                                .background(Color(0xE6E9FF32)) // Bright yellow-lime focus stripe with 90% opacity
+                                .height(rulerFocusStripeHeight.dp)
+                                .background(Color(rulerColorStripe))
                         )
                     }
                 }
@@ -3360,6 +3430,216 @@ fun PdfViewerScreen(
                             enabled = isBlueLightFilterEnabled
                         ) {
                             Text("+", color = if (!isBlueLightFilterEnabled) Color.Gray else Color.White, style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (isRulerSettingsOpen) {
+        // Dismiss scrim overlay
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { isRulerSettingsOpen = false }
+        )
+
+        // Ruler settings control panel card floating above the bottom bar
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = 90.dp, start = 16.dp, end = 16.dp),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = false) {}, // Prevent dismiss when tapping card content
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF3E4756)), // Slate grey
+                elevation = CardDefaults.cardElevation(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = "Ruler Settings",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    // 1. Ruler Height
+                    Column {
+                        Text(
+                            text = "Ruler Height: ${rulerHeight.toInt()} dp",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Slider(
+                                value = rulerHeight,
+                                onValueChange = {
+                                    rulerHeight = it
+                                    sharedPrefs.edit().putFloat("reading_ruler_height", it).apply()
+                                    // Ensure stripe height doesn't exceed ruler height
+                                    if (rulerFocusStripeHeight > rulerHeight - 6f) {
+                                        rulerFocusStripeHeight = (rulerHeight - 6f).coerceAtLeast(2f)
+                                        sharedPrefs.edit().putFloat("reading_ruler_stripe_height", rulerFocusStripeHeight).apply()
+                                    }
+                                },
+                                valueRange = 20f..150f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color(0xFF03A9F4),
+                                    inactiveTrackColor = Color.Gray
+                                )
+                            )
+                            IconButton(onClick = {
+                                rulerHeight = (rulerHeight - 5f).coerceAtLeast(20f)
+                                sharedPrefs.edit().putFloat("reading_ruler_height", rulerHeight).apply()
+                                if (rulerFocusStripeHeight > rulerHeight - 6f) {
+                                    rulerFocusStripeHeight = (rulerHeight - 6f).coerceAtLeast(2f)
+                                    sharedPrefs.edit().putFloat("reading_ruler_stripe_height", rulerFocusStripeHeight).apply()
+                                }
+                            }) {
+                                Text("-", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                            }
+                            IconButton(onClick = {
+                                rulerHeight = (rulerHeight + 5f).coerceAtMost(150f)
+                                sharedPrefs.edit().putFloat("reading_ruler_height", rulerHeight).apply()
+                            }) {
+                                Text("+", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                            }
+                        }
+                    }
+
+                    // 2. Focus Stripe Height
+                    Column {
+                        Text(
+                            text = "Stripe Height: ${rulerFocusStripeHeight.toInt()} dp",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Slider(
+                                value = rulerFocusStripeHeight,
+                                onValueChange = {
+                                    rulerFocusStripeHeight = it.coerceAtMost(rulerHeight - 6f)
+                                    sharedPrefs.edit().putFloat("reading_ruler_stripe_height", rulerFocusStripeHeight).apply()
+                                },
+                                valueRange = 2f..50f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color(0xFF03A9F4),
+                                    inactiveTrackColor = Color.Gray
+                                )
+                            )
+                            IconButton(onClick = {
+                                rulerFocusStripeHeight = (rulerFocusStripeHeight - 2f).coerceAtLeast(2f)
+                                sharedPrefs.edit().putFloat("reading_ruler_stripe_height", rulerFocusStripeHeight).apply()
+                            }) {
+                                Text("-", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                            }
+                            IconButton(onClick = {
+                                rulerFocusStripeHeight = (rulerFocusStripeHeight + 2f).coerceAtMost(rulerHeight - 6f)
+                                sharedPrefs.edit().putFloat("reading_ruler_stripe_height", rulerFocusStripeHeight).apply()
+                            }) {
+                                Text("+", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                            }
+                        }
+                    }
+
+                    // 3. Ruler Opacity
+                    Column {
+                        Text(
+                            text = "Ruler Opacity: ${(rulerOpacityOuter * 100).toInt()}%",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Slider(
+                                value = rulerOpacityOuter,
+                                onValueChange = {
+                                    rulerOpacityOuter = it
+                                    sharedPrefs.edit().putFloat("reading_ruler_opacity_outer", it).apply()
+                                },
+                                valueRange = 0.1f..0.9f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color(0xFF03A9F4),
+                                    inactiveTrackColor = Color.Gray
+                                )
+                            )
+                            IconButton(onClick = {
+                                rulerOpacityOuter = (rulerOpacityOuter - 0.05f).coerceAtLeast(0.1f)
+                                sharedPrefs.edit().putFloat("reading_ruler_opacity_outer", rulerOpacityOuter).apply()
+                            }) {
+                                Text("-", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                            }
+                            IconButton(onClick = {
+                                rulerOpacityOuter = (rulerOpacityOuter + 0.05f).coerceAtMost(0.9f)
+                                sharedPrefs.edit().putFloat("reading_ruler_opacity_outer", rulerOpacityOuter).apply()
+                            }) {
+                                Text("+", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                            }
+                        }
+                    }
+
+                    // 4. Focus Stripe Color
+                    Column {
+                        Text(
+                            text = "Stripe Color:",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val colorsList = listOf(
+                            0xE6E9FF32.toInt() to "Yellow",
+                            0xFF4CAF50.toInt() to "Green",
+                            0xFF2196F3.toInt() to "Blue",
+                            0xFFF44336.toInt() to "Red",
+                            0xFFFF9800.toInt() to "Orange"
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            colorsList.forEach { (colorVal, name) ->
+                                val isSelected = rulerColorStripe == colorVal
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .background(Color(colorVal))
+                                        .clickable {
+                                            rulerColorStripe = colorVal
+                                            sharedPrefs.edit().putInt("reading_ruler_stripe_color", colorVal).apply()
+                                        }
+                                        .border(
+                                            width = if (isSelected) 3.dp else 1.dp,
+                                            color = if (isSelected) Color.White else Color.Transparent,
+                                            shape = RoundedCornerShape(18.dp)
+                                        )
+                                )
+                            }
                         }
                     }
                 }
