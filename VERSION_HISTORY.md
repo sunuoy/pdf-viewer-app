@@ -18,6 +18,13 @@ This file tracks all modifications, updates, and releases for the PDF Viewer App
 ### 4. Assets Synchronization
 - During application startup, check the active dynamic version and perform any necessary file or cache migrations (like asset copying) to match the new bundle layout.
 
+## [V 1.2.1] - Themed Reading Ruler & Tabbed Bookmarks - 2026-07-04
+### Added
+- **Reading Ruler Themes**: Added "Classic Wood Ruler" (wooden background, physical tick marks, and numbers) and "Memphis Retro" (retro indigo background, teal stripes, yellow dots/squiggles, pink triangles).
+- **Ruler ON/OFF Switch**: Added direct toggle switch at the top of Ruler Settings dialog.
+- **Manual RGB Stripe Color Picker**: Replaced predefined color row with Red, Green, and Blue manual color sliders along with a live color preview bubble.
+- **Tabbed Bookmarks / Chapters / Notes Screen**: Rebuilt BookmarkScreen to feature standard top-bar tabs (Chapters, Bookmarks, Notes) with page-snippet text previews and a multi-functional bottom control bar.
+
 ## [V 1.2.0] - Collapsible Menu & Ruler Settings - 2026-07-04
 ### Added
 - **Collapsible Options Menu**: Main dropdown menu categories are now collapsible with chevron arrow indicators.
