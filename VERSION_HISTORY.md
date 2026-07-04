@@ -18,6 +18,13 @@ This file tracks all modifications, updates, and releases for the PDF Viewer App
 ### 4. Assets Synchronization
 - During application startup, check the active dynamic version and perform any necessary file or cache migrations (like asset copying) to match the new bundle layout.
 
+## [V 1.2.2] - Ruler Live Preview & Stripe Toggle - 2026-07-04
+### Added
+- **Live Ruler Preview**: Added a responsive, mini themed reading ruler preview inside the Ruler Settings dialog that updates in real-time as themes, height, stripe height, opacity, and stripe color are configured.
+- **Stripe Color ON/OFF Switch**: Added a dedicated switch to toggle the focus stripe color tint on/off, leaving it fully transparent when disabled and dynamically disabling the RGB sliders.
+### Removed
+- **Open Multi-page PDF**: Completely removed this test/debug option from the main Home Screen dropdown options menu.
+
 ## [V 1.2.1] - Themed Reading Ruler & Tabbed Bookmarks - 2026-07-04
 ### Added
 - **Reading Ruler Themes**: Added "Classic Wood Ruler" (wooden background, physical tick marks, and numbers) and "Memphis Retro" (retro indigo background, teal stripes, yellow dots/squiggles, pink triangles).
