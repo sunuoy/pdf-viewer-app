@@ -57,6 +57,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -117,7 +119,7 @@ enum class ViewerSubPage {
 fun PdfViewerScreen(
     pdfPath: String,
     onBack: () -> Unit,
-    onNavigateToBookmarks: () -> Unit,
+    onNavigateToBookmarks: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -240,6 +242,7 @@ fun PdfViewerScreen(
     var rulerColorStripe by remember { mutableStateOf(sharedPrefs.getInt("reading_ruler_stripe_color", 0xE6E9FF32.toInt())) }
     var rulerOpacityOuter by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_opacity_outer", 0.3f)) }
     var isRulerSettingsOpen by remember { mutableStateOf(false) }
+    var rulerTheme by remember { mutableStateOf(sharedPrefs.getString("reading_ruler_theme", "solid") ?: "solid") }
     var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 13f)) }
     var isBrightnessMenuOpen by remember { mutableStateOf(false) }
     var isAutoBrightness by remember { mutableStateOf(sharedPrefs.getBoolean("is_auto_brightness", true)) }
@@ -915,7 +918,7 @@ fun PdfViewerScreen(
                                     text = { Text("Open Bookmarks") },
                                     onClick = {
                                         isMenuExpanded = false
-                                        onNavigateToBookmarks()
+                                        onNavigateToBookmarks(currentPageIndex)
                                     },
                                     leadingIcon = { Icon(Icons.Default.Bookmarks, contentDescription = null) }
                                 )
@@ -1206,7 +1209,7 @@ fun PdfViewerScreen(
                             }
                         }
                         "chapters" -> {
-                            TooltipIconButton(onClick = { onNavigateToBookmarks() }, tooltipText = "Open Bookmarks") {
+                            TooltipIconButton(onClick = { onNavigateToBookmarks(currentPageIndex) }, tooltipText = "Open Bookmarks") {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
                                     contentDescription = "Open Bookmarks",
@@ -2435,7 +2438,7 @@ fun PdfViewerScreen(
                             .height(rulerHeight.dp)
                             .offset(y = with(density) { rulerYOffset.toDp() })
                             .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFF3E4756).copy(alpha = rulerOpacityOuter))
+                            .graphicsLayer(compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen)
                             .pointerInput(Unit) {
                                 detectDragGestures { change, dragAmount ->
                                     change.consume()
@@ -2445,13 +2448,168 @@ fun PdfViewerScreen(
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        // Horizontal focus stripe in the middle
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(rulerFocusStripeHeight.dp)
-                                .background(Color(rulerColorStripe))
-                        )
+                        if (rulerTheme == "solid") {
+                            // Standard Solid theme
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color(0xFF3E4756).copy(alpha = rulerOpacityOuter))
+                            )
+                            // Focus stripe in center
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(rulerFocusStripeHeight.dp)
+                                    .background(Color(rulerColorStripe))
+                            )
+                        } else {
+                            // Custom theme drawing using Canvas
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val widthPx = size.width
+                                val heightPx = size.height
+                                val stripeHeightPx = rulerFocusStripeHeight.dp.toPx()
+
+                                if (rulerTheme == "classic") {
+                                    // --- Classic Wooden / Plastic Ruler ---
+                                    // 1. Draw ruler base (sand/wood color with outer opacity)
+                                    drawRoundRect(
+                                        color = Color(0xFFDFD0C0).copy(alpha = rulerOpacityOuter),
+                                        size = size,
+                                        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
+                                    )
+
+                                    // 2. Draw tick marks along top & bottom
+                                    val tickColor = Color(0xFF5D4037).copy(alpha = rulerOpacityOuter)
+                                    val numTicks = 20
+                                    val spacing = widthPx / numTicks
+                                    val textPaint = android.graphics.Paint().apply {
+                                        color = android.graphics.Color.argb((rulerOpacityOuter * 255).toInt(), 0x5D, 0x40, 0x37)
+                                        textSize = 10.dp.toPx()
+                                        textAlign = android.graphics.Paint.Align.CENTER
+                                        typeface = android.graphics.Typeface.create("serif", android.graphics.Typeface.NORMAL)
+                                    }
+
+                                    for (i in 0..numTicks) {
+                                        val x = i * spacing
+                                        val tickLen = when {
+                                            i % 10 == 0 -> 12.dp.toPx()
+                                            i % 5 == 0 -> 8.dp.toPx()
+                                            else -> 5.dp.toPx()
+                                        }
+
+                                        // Top ticks
+                                        drawLine(
+                                            color = tickColor,
+                                            start = Offset(x, 0f),
+                                            end = Offset(x, tickLen),
+                                            strokeWidth = 1.dp.toPx()
+                                        )
+
+                                        // Bottom ticks
+                                        drawLine(
+                                            color = tickColor,
+                                            start = Offset(x, heightPx),
+                                            end = Offset(x, heightPx - tickLen),
+                                            strokeWidth = 1.dp.toPx()
+                                        )
+
+                                        // Draw major numbers
+                                        if (i % 2 == 0 && x > 20f && x < widthPx - 20f) {
+                                            drawContext.canvas.nativeCanvas.drawText(
+                                                (i / 2).toString(),
+                                                x,
+                                                12.dp.toPx() + tickLen,
+                                                textPaint
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    // --- Memphis Retro Theme ---
+                                    // 1. Draw base (indigo with outer opacity)
+                                    drawRoundRect(
+                                        color = Color(0xFF3F3D56).copy(alpha = rulerOpacityOuter),
+                                        size = size,
+                                        cornerRadius = CornerRadius(6.dp.toPx(), 6.dp.toPx())
+                                    )
+
+                                    // 2. Draw retro diagonal stripes on left
+                                    val stripeColor = Color(0xFF00ADB5).copy(alpha = rulerOpacityOuter)
+                                    for (i in 0..5) {
+                                        drawLine(
+                                            color = stripeColor,
+                                            start = Offset(20.dp.toPx() + i * 8.dp.toPx(), 4.dp.toPx()),
+                                            end = Offset(4.dp.toPx() + i * 8.dp.toPx(), heightPx - 4.dp.toPx()),
+                                            strokeWidth = 3.dp.toPx()
+                                        )
+                                    }
+
+                                    // 3. Draw small yellow dots on right
+                                    val dotColor = Color(0xFFFFD200).copy(alpha = rulerOpacityOuter)
+                                    for (row in 0..2) {
+                                        for (col in 0..3) {
+                                            drawCircle(
+                                                color = dotColor,
+                                                radius = 2.dp.toPx(),
+                                                center = Offset(widthPx - 40.dp.toPx() + col * 8.dp.toPx(), 12.dp.toPx() + row * 8.dp.toPx())
+                                            )
+                                        }
+                                    }
+
+                                    // 4. Draw yellow triangle bottom left
+                                    val yellowPath = androidx.compose.ui.graphics.Path().apply {
+                                        moveTo(30.dp.toPx(), heightPx - 4.dp.toPx())
+                                        lineTo(45.dp.toPx(), heightPx - 20.dp.toPx())
+                                        lineTo(60.dp.toPx(), heightPx - 4.dp.toPx())
+                                        close()
+                                    }
+                                    drawPath(yellowPath, Color(0xFFFFD200).copy(alpha = rulerOpacityOuter))
+
+                                    // 5. Draw pink triangle bottom right
+                                    val pinkPath = androidx.compose.ui.graphics.Path().apply {
+                                        moveTo(widthPx - 60.dp.toPx(), heightPx - 4.dp.toPx())
+                                        lineTo(widthPx - 45.dp.toPx(), heightPx - 20.dp.toPx())
+                                        lineTo(widthPx - 30.dp.toPx(), heightPx - 4.dp.toPx())
+                                        close()
+                                    }
+                                    drawPath(pinkPath, Color(0xFFFF2E93).copy(alpha = rulerOpacityOuter))
+
+                                    // 6. Draw cyan semi-circle bottom center
+                                    drawArc(
+                                        color = Color(0xFF00ADB5).copy(alpha = rulerOpacityOuter),
+                                        startAngle = 180f,
+                                        sweepAngle = 180f,
+                                        useCenter = true,
+                                        topLeft = Offset(widthPx / 2 - 15.dp.toPx(), heightPx - 15.dp.toPx()),
+                                        size = Size(30.dp.toPx(), 30.dp.toPx())
+                                    )
+
+                                    // 7. Draw yellow squiggle top right
+                                    drawLine(
+                                        color = Color(0xFFFFD200).copy(alpha = rulerOpacityOuter),
+                                        start = Offset(widthPx - 80.dp.toPx(), 10.dp.toPx()),
+                                        end = Offset(widthPx - 65.dp.toPx(), 25.dp.toPx()),
+                                        strokeWidth = 2.dp.toPx()
+                                    )
+                                }
+
+                                // 3. Clear cutout in the middle for reading
+                                drawRoundRect(
+                                    color = Color.Transparent,
+                                    topLeft = Offset(12.dp.toPx(), (heightPx - stripeHeightPx) / 2),
+                                    size = Size(widthPx - 24.dp.toPx(), stripeHeightPx),
+                                    cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx()),
+                                    blendMode = androidx.compose.ui.graphics.BlendMode.Clear
+                                )
+                            }
+                            // 4. Draw focus stripe with user selected color
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 28.dp)
+                                    .height(rulerFocusStripeHeight.dp)
+                                    .background(Color(rulerColorStripe).copy(alpha = 0.35f)) // semi-transparent color overlay for readability
+                            )
+                        }
                     }
                 }
             }
@@ -3467,12 +3625,33 @@ fun PdfViewerScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Text(
-                        text = "Ruler Settings",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Ruler Settings",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        // ON/OFF Switch
+                        Switch(
+                            checked = isReadingRulerEnabled,
+                            onCheckedChange = {
+                                isReadingRulerEnabled = it
+                                sharedPrefs.edit().putBoolean("is_reading_ruler_enabled", it).apply()
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF03A9F4),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            )
+                        )
+                    }
 
                     // 1. Ruler Height
                     Column {
@@ -3603,42 +3782,142 @@ fun PdfViewerScreen(
                         }
                     }
 
-                    // 4. Focus Stripe Color
+                    // 4. Focus Stripe Color (Manual RGB Color Picker)
+                    Column {
+                        val r = (rulerColorStripe shr 16) and 0xFF
+                        val g = (rulerColorStripe shr 8) and 0xFF
+                        val b = rulerColorStripe and 0xFF
+                        val alpha = (rulerColorStripe shr 24) and 0xFF
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Stripe Color (RGB):",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            // Live Preview Circle
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color(rulerColorStripe))
+                                    .border(1.dp, Color.White, RoundedCornerShape(16.dp))
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Red Slider
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("R: $r", color = Color(0xFFFF8A80), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Slider(
+                                value = r.toFloat(),
+                                onValueChange = {
+                                    val newColor = (alpha shl 24) or (it.toInt() shl 16) or (g shl 8) or b
+                                    rulerColorStripe = newColor
+                                    sharedPrefs.edit().putInt("reading_ruler_stripe_color", newColor).apply()
+                                },
+                                valueRange = 0f..255f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color(0xFFFF5252),
+                                    inactiveTrackColor = Color.DarkGray
+                                )
+                            )
+                        }
+
+                        // Green Slider
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("G: $g", color = Color(0xFFB9F6CA), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Slider(
+                                value = g.toFloat(),
+                                onValueChange = {
+                                    val newColor = (alpha shl 24) or (r shl 16) or (it.toInt() shl 8) or b
+                                    rulerColorStripe = newColor
+                                    sharedPrefs.edit().putInt("reading_ruler_stripe_color", newColor).apply()
+                                },
+                                valueRange = 0f..255f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color(0xFF69F0AE),
+                                    inactiveTrackColor = Color.DarkGray
+                                )
+                            )
+                        }
+
+                        // Blue Slider
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("B: $b", color = Color(0xFF82B1FF), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Slider(
+                                value = b.toFloat(),
+                                onValueChange = {
+                                    val newColor = (alpha shl 24) or (r shl 16) or (g shl 8) or it.toInt()
+                                    rulerColorStripe = newColor
+                                    sharedPrefs.edit().putInt("reading_ruler_stripe_color", newColor).apply()
+                                },
+                                valueRange = 0f..255f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color(0xFF448AFF),
+                                    inactiveTrackColor = Color.DarkGray
+                                )
+                            )
+                        }
+                    }
+
+                    // 5. Ruler Theme Selection
                     Column {
                         Text(
-                            text = "Stripe Color:",
+                            text = "Ruler Theme:",
                             color = Color.White,
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        val colorsList = listOf(
-                            0xE6E9FF32.toInt() to "Yellow",
-                            0xFF4CAF50.toInt() to "Green",
-                            0xFF2196F3.toInt() to "Blue",
-                            0xFFF44336.toInt() to "Red",
-                            0xFFFF9800.toInt() to "Orange"
-                        )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            colorsList.forEach { (colorVal, name) ->
-                                val isSelected = rulerColorStripe == colorVal
+                            val themesList = listOf(
+                                "solid" to "Solid",
+                                "classic" to "Classic",
+                                "retro" to "Retro"
+                            )
+                            themesList.forEach { (themeId, label) ->
+                                val isSelected = rulerTheme == themeId
                                 Box(
                                     modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(RoundedCornerShape(18.dp))
-                                        .background(Color(colorVal))
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) Color(0xFF03A9F4) else Color(0xFF4E596C))
                                         .clickable {
-                                            rulerColorStripe = colorVal
-                                            sharedPrefs.edit().putInt("reading_ruler_stripe_color", colorVal).apply()
+                                            rulerTheme = themeId
+                                            sharedPrefs.edit().putString("reading_ruler_theme", themeId).apply()
                                         }
-                                        .border(
-                                            width = if (isSelected) 3.dp else 1.dp,
-                                            color = if (isSelected) Color.White else Color.Transparent,
-                                            shape = RoundedCornerShape(18.dp)
-                                        )
-                                )
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
                             }
                         }
                     }

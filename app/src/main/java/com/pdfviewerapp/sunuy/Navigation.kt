@@ -69,8 +69,8 @@ fun MainNavigation(
           PdfViewerScreen(
             pdfPath = key.pdfPath,
             onBack = navigateBack,
-            onNavigateToBookmarks = {
-              backStack.add(Bookmarks(key.pdfPath))
+            onNavigateToBookmarks = { pageIndex ->
+              backStack.add(Bookmarks(key.pdfPath, pageIndex))
             },
             modifier = Modifier.fillMaxSize()
           )
@@ -78,6 +78,7 @@ fun MainNavigation(
         entry<Bookmarks> { key ->
           BookmarkScreen(
             pdfPath = key.pdfPath,
+            currentPageIndex = key.currentPageIndex,
             onBack = navigateBack,
             onBookmarkClick = {
               if (backStack.size > 1) {
