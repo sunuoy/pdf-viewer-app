@@ -181,7 +181,7 @@ fun PdfViewerScreen(
             "brightness" to "Brightness",
             "search" to "Search",
             "tilt" to "Allow tilt device to turn page",
-            "ruler" to "Reading Ruler",
+            "ruler" to "Ruler",
             "visual" to "Visual Options",
             "control" to "Control Options",
             "misc" to "Miscellaneous",
@@ -1180,11 +1180,11 @@ fun PdfViewerScreen(
                             IconButton(onClick = {
                                 isReadingRulerEnabled = !isReadingRulerEnabled
                                 sharedPrefs.edit().putBoolean("is_reading_ruler_enabled", isReadingRulerEnabled).apply()
-                                Toast.makeText(context, "Reading Ruler: ${if (isReadingRulerEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Ruler: ${if (isReadingRulerEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
                             }) {
                                 Icon(
                                     imageVector = Icons.Default.HorizontalSplit,
-                                    contentDescription = "Reading Ruler",
+                                    contentDescription = "Ruler",
                                     tint = if (isReadingRulerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
