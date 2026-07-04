@@ -10,6 +10,12 @@ import android.os.ParcelFileDescriptor
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.widget.Toast
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.content.pm.ActivityInfo
+import kotlinx.coroutines.awaitCancellation
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -40,6 +46,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -159,12 +166,48 @@ fun PdfViewerScreen(
     // UI control states
     val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
     var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
-    var showAutoScrollButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_auto_scroll", true)) }
-    var showScrollDirectionButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_scroll_dir", true)) }
-    var showSearchButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_search", true)) }
-    var showTtsButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_tts", true)) }
-    var showTranslateButton by remember { mutableStateOf(sharedPrefs.getBoolean("show_btn_translate", true)) }
+    
+    val defaultButtons = remember {
+        listOf(
+            "orientation" to "Screen Orientation",
+            "daynight" to "Day/Night Mode",
+            "speak" to "Speak",
+            "fontsize" to "Font Size",
+            "autoscroll" to "Autoscroll",
+            "chapters" to "Chapters",
+            "bookmarks" to "Bookmarks",
+            "brightness" to "Brightness",
+            "search" to "Search",
+            "tilt" to "Allow tilt device to turn page",
+            "visual" to "Visual Options",
+            "control" to "Control Options",
+            "misc" to "Miscellaneous",
+            "customize" to "Customize reader bar buttons"
+        )
+    }
+
+    val savedOrder = remember {
+        sharedPrefs.getString("reader_bar_order", "orientation,daynight,speak,fontsize,autoscroll,chapters,bookmarks,brightness,search,tilt,visual,control,misc,customize") ?: "orientation,daynight,speak,fontsize,autoscroll,chapters,bookmarks,brightness,search,tilt,visual,control,misc,customize"
+    }
+    
+    var buttonOrderList by remember { mutableStateOf(savedOrder.split(",").filter { it.isNotEmpty() }) }
+    
+    val buttonEnabledMap = remember {
+        mutableStateMapOf<String, Boolean>().apply {
+            defaultButtons.forEach { (id, _) ->
+                val defaultVal = id in listOf("orientation", "daynight", "speak", "fontsize", "autoscroll", "chapters", "bookmarks", "brightness", "search", "customize")
+                put(id, sharedPrefs.getBoolean("reader_bar_enabled_$id", defaultVal))
+            }
+        }
+    }
+    
+    var isDoubleLineLayout by remember { mutableStateOf(sharedPrefs.getBoolean("reader_bar_double_line", false)) }
     var isCustomizeReaderBarDialogOpen by remember { mutableStateOf(false) }
+    
+    // Custom button action states
+    var isTiltToTurnPageEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_tilt_to_turn_page", false)) }
+    var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 16f)) }
+    var isScreenDimmed by remember { mutableStateOf(false) }
     var isDarkThemeInverted by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
@@ -560,6 +603,92 @@ fun PdfViewerScreen(
         refreshDownloadedModels()
     }
     
+    // Tilt-to-turn page accelerometer listener
+    LaunchedEffect(isTiltToTurnPageEnabled) {
+        if (!isTiltToTurnPageEnabled) return@LaunchedEffect
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (accelerometer == null) {
+            Toast.makeText(context, "No accelerometer sensor found", Toast.LENGTH_SHORT).show()
+            isTiltToTurnPageEnabled = false
+            sharedPrefs.edit().putBoolean("is_tilt_to_turn_page", false).apply()
+            return@LaunchedEffect
+        }
+        
+        var lastTurnTime = 0L
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event == null) return
+                val now = System.currentTimeMillis()
+                if (now - lastTurnTime < 1500L) return
+                
+                val x = event.values[0]
+                if (x > 3.5f) { // Tilt Left
+                    scope.launch {
+                        if (currentPageIndex > 0) {
+                            listState.animateScrollToItem(currentPageIndex - 1)
+                            lastTurnTime = now
+                        }
+                    }
+                } else if (x < -3.5f) { // Tilt Right
+                    scope.launch {
+                        if (currentPageIndex < pageCount - 1) {
+                            listState.animateScrollToItem(currentPageIndex + 1)
+                            lastTurnTime = now
+                        }
+                    }
+                }
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        
+        sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
+        try {
+            awaitCancellation()
+        } finally {
+            sensorManager.unregisterListener(listener)
+        }
+    }
+
+    // Toggle Screen Orientation Lock
+    fun toggleScreenOrientation() {
+        val activity = context as? ComponentActivity ?: return
+        val currentOrientation = activity.requestedOrientation
+        if (currentOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            Toast.makeText(context, "Orientation: Portrait", Toast.LENGTH_SHORT).show()
+        } else {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            Toast.makeText(context, "Orientation: Landscape", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Cycle text document font size
+    fun cycleFontSize() {
+        val sizes = listOf(14f, 16f, 18f, 20f, 22f, 24f)
+        val currentIndex = sizes.indexOf(textFontSize)
+        val nextIndex = (currentIndex + 1) % sizes.size
+        textFontSize = sizes[nextIndex]
+        sharedPrefs.edit().putFloat("text_font_size", textFontSize).apply()
+        Toast.makeText(context, "Font Size: ${textFontSize.toInt()}sp", Toast.LENGTH_SHORT).show()
+    }
+
+    // Toggle Dim Screen Brightness Overlay
+    fun toggleScreenBrightness() {
+        val activity = context as? ComponentActivity ?: return
+        val layoutParams = activity.window.attributes
+        if (isScreenDimmed) {
+            layoutParams.screenBrightness = -1f
+            isScreenDimmed = false
+            Toast.makeText(context, "Brightness: Default", Toast.LENGTH_SHORT).show()
+        } else {
+            layoutParams.screenBrightness = 0.05f
+            isScreenDimmed = true
+            Toast.makeText(context, "Brightness: Dimmed", Toast.LENGTH_SHORT).show()
+        }
+        activity.window.attributes = layoutParams
+    }
+    
     // Save last page progress to database (debounced to avoid heavy DB writes during active scroll)
     LaunchedEffect(currentPageIndex) {
         if (pageCount > 0) {
@@ -896,6 +1025,185 @@ fun PdfViewerScreen(
                 tonalElevation = 8.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                val ReaderBarButtonIcon = @Composable { id: String ->
+                    when (id) {
+                        "orientation" -> {
+                            IconButton(onClick = { toggleScreenOrientation() }) {
+                                Icon(
+                                    imageVector = Icons.Default.StayCurrentPortrait,
+                                    contentDescription = "Screen Orientation",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "daynight" -> {
+                            IconButton(onClick = { isDarkThemeInverted = !isDarkThemeInverted }) {
+                                Icon(
+                                    imageVector = if (isDarkThemeInverted) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = "Day/Night Mode Inversion",
+                                    tint = if (isDarkThemeInverted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "speak" -> {
+                            if (!isComicBook) {
+                                IconButton(onClick = {
+                                    if (isTtsActive) {
+                                        ttsService.stop()
+                                        isTtsActive = false
+                                    } else {
+                                        startTtsForPage(currentPageIndex)
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                        contentDescription = "TTS Read Page",
+                                        tint = if (isTtsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                        "fontsize" -> {
+                            if (isTextDocument) {
+                                IconButton(onClick = { cycleFontSize() }) {
+                                    Icon(
+                                        imageVector = Icons.Default.FormatSize,
+                                        contentDescription = "Font Size",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                        "autoscroll" -> {
+                            IconButton(onClick = { isAutoScrollActive = !isAutoScrollActive }) {
+                                Icon(
+                                    imageVector = if (isAutoScrollActive) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
+                                    contentDescription = "Auto Scroll",
+                                    tint = if (isAutoScrollActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "chapters" -> {
+                            IconButton(onClick = { onNavigateToBookmarks() }) {
+                                Icon(
+                                    imageVector = Icons.Default.FormatListBulleted,
+                                    contentDescription = "Open Bookmarks",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "bookmarks" -> {
+                            IconButton(onClick = {
+                                scope.launch {
+                                    if (isCurrentPageBookmarked) {
+                                        bookmarks.find { it.pageNumber == currentPageIndex }?.let {
+                                            database.bookmarkDao().deleteBookmark(it)
+                                        }
+                                    } else {
+                                        database.bookmarkDao().insertBookmark(
+                                            Bookmark(
+                                                pdfPath = pdfPath,
+                                                pageNumber = currentPageIndex,
+                                                note = "Bookmark added at page ${currentPageIndex + 1}",
+                                                timestamp = System.currentTimeMillis()
+                                            )
+                                        )
+                                    }
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = if (isCurrentPageBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = "Bookmark",
+                                    tint = if (isCurrentPageBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "brightness" -> {
+                            IconButton(onClick = { toggleScreenBrightness() }) {
+                                Icon(
+                                    imageVector = Icons.Default.WbSunny,
+                                    contentDescription = "Brightness Overlay",
+                                    tint = if (isScreenDimmed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "search" -> {
+                            IconButton(onClick = {
+                                isSearchActive = !isSearchActive
+                                if (!isSearchActive) {
+                                    searchQuery = ""
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Search text",
+                                    tint = if (isSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "tilt" -> {
+                            IconButton(onClick = {
+                                isTiltToTurnPageEnabled = !isTiltToTurnPageEnabled
+                                sharedPrefs.edit().putBoolean("is_tilt_to_turn_page", isTiltToTurnPageEnabled).apply()
+                                Toast.makeText(context, "Tilt Page Turn: ${if (isTiltToTurnPageEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.ScreenLockRotation,
+                                    contentDescription = "Allow tilt device to turn page",
+                                    tint = if (isTiltToTurnPageEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "visual" -> {
+                            IconButton(onClick = {
+                                isTranslationBarActive = !isTranslationBarActive
+                                if (isTranslationBarActive) {
+                                    translatePage(currentPageIndex)
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.RemoveRedEye,
+                                    contentDescription = "Translate/TTS Pane",
+                                    tint = if (isTranslationBarActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "control" -> {
+                            IconButton(onClick = {
+                                isMenuExpanded = true
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.SettingsApplications,
+                                    contentDescription = "Quick Control Options",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "misc" -> {
+                            IconButton(onClick = {
+                                isModelManagerOpen = true
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = "Offline Models Manager",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "customize" -> {
+                            IconButton(onClick = {
+                                isCustomizeReaderBarDialogOpen = true
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreHoriz,
+                                    contentDescription = "Customize reader bar buttons",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -914,64 +1222,23 @@ fun PdfViewerScreen(
                         )
                     }
                     
-                    // Reader / Translator Pane / Auto-Scroll Toggle
-                    Row {
-                        if (showAutoScrollButton) {
-                            IconButton(onClick = { isAutoScrollActive = !isAutoScrollActive }) {
-                                Icon(
-                                    imageVector = if (isAutoScrollActive) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
-                                    contentDescription = "Auto Scroll",
-                                    tint = if (isAutoScrollActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
+                    val enabledButtons = buttonOrderList.filter { buttonEnabledMap[it] == true }
+                    
+                    if (isDoubleLineLayout) {
+                        val mid = (enabledButtons.size + 1) / 2
+                        val firstRow = enabledButtons.take(mid)
+                        val secondRow = enabledButtons.drop(mid)
+                        Column(horizontalAlignment = Alignment.End) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                firstRow.forEach { id -> ReaderBarButtonIcon(id) }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                secondRow.forEach { id -> ReaderBarButtonIcon(id) }
                             }
                         }
-                        if (showScrollDirectionButton) {
-                            IconButton(onClick = { 
-                                isVerticalScroll = !isVerticalScroll
-                                sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
-                            }) {
-                                Icon(
-                                    imageVector = if (isVerticalScroll) Icons.Default.SwapVert else Icons.Default.SwapHoriz,
-                                    contentDescription = "Scroll Direction",
-                                    tint = if (isVerticalScroll) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                        if (showSearchButton) {
-                            IconButton(onClick = {
-                                isSearchActive = !isSearchActive
-                                if (!isSearchActive) {
-                                    searchQuery = ""
-                                }
-                            }) {
-                                Icon(imageVector = Icons.Default.Search, contentDescription = "Search text")
-                            }
-                        }
-                        if (showTtsButton && !isComicBook) {
-                            IconButton(onClick = {
-                                if (isTtsActive) {
-                                    ttsService.stop()
-                                    isTtsActive = false
-                                } else {
-                                    startTtsForPage(currentPageIndex)
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                    contentDescription = "TTS Read Page",
-                                    tint = if (isTtsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                        if (showTranslateButton) {
-                            IconButton(onClick = {
-                                isTranslationBarActive = !isTranslationBarActive
-                                if (isTranslationBarActive) {
-                                    translatePage(currentPageIndex)
-                                }
-                            }) {
-                                Icon(imageVector = Icons.Default.Translate, contentDescription = "Translate/TTS Pane")
-                            }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            enabledButtons.forEach { id -> ReaderBarButtonIcon(id) }
                         }
                     }
                 }
@@ -1016,8 +1283,8 @@ fun PdfViewerScreen(
                                 .fillMaxSize()
                                 .verticalScroll(scrollState),
                             style = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 16.sp,
-                                lineHeight = 24.sp
+                                fontSize = textFontSize.sp,
+                                lineHeight = (textFontSize * 1.5f).sp
                             ),
                             color = if (isDarkThemeInverted) Color.White else Color(0xFF1E293B)
                         )
@@ -2077,120 +2344,229 @@ fun PdfViewerScreen(
 
             // Customize Reader Bar Dialog
             if (isCustomizeReaderBarDialogOpen) {
+                // Copy current states to temp list to allow cancelling changes
+                var tempOrderList by remember { mutableStateOf(buttonOrderList.toList()) }
+                val tempEnabledMap = remember { mutableStateMapOf<String, Boolean>().apply { 
+                    buttonEnabledMap.forEach { (k, v) -> put(k, v) }
+                }}
+                var tempDoubleLine by remember { mutableStateOf(isDoubleLineLayout) }
+
                 AlertDialog(
                     onDismissRequest = { isCustomizeReaderBarDialogOpen = false },
                     title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Build,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text("Customize Reader Bar", style = MaterialTheme.typography.titleMedium)
-                        }
+                        Text(
+                            text = "Customize reader bar buttons", 
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
                     },
                     text = {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Text(
-                                text = "Select which quick-action buttons are shown in the bottom reader bar.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            
-                            // Auto Scroll
+                            // Double-line layout checkbox
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth().clickable { tempDoubleLine = !tempDoubleLine },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Auto Scroll Toggle")
-                                Switch(
-                                    checked = showAutoScrollButton,
-                                    onCheckedChange = { checked ->
-                                        showAutoScrollButton = checked
-                                        sharedPrefs.edit().putBoolean("show_btn_auto_scroll", checked).apply()
-                                    }
+                                Checkbox(
+                                    checked = tempDoubleLine,
+                                    onCheckedChange = { tempDoubleLine = it }
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Double-line layout", style = MaterialTheme.typography.bodyLarge)
                             }
-                            
-                            // Scroll Direction
+
+                            // Preview Layouts
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Text("Scroll Direction")
-                                Switch(
-                                    checked = showScrollDirectionButton,
-                                    onCheckedChange = { checked ->
-                                        showScrollDirectionButton = checked
-                                        sharedPrefs.edit().putBoolean("show_btn_scroll_dir", checked).apply()
-                                    }
-                                )
-                            }
-                            
-                            // Search
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Search Panel")
-                                Switch(
-                                    checked = showSearchButton,
-                                    onCheckedChange = { checked ->
-                                        showSearchButton = checked
-                                        sharedPrefs.edit().putBoolean("show_btn_search", checked).apply()
-                                    }
-                                )
-                            }
-                            
-                            // TTS
-                            if (!isComicBook) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("TTS Speech Reader")
-                                    Switch(
-                                        checked = showTtsButton,
-                                        onCheckedChange = { checked ->
-                                            showTtsButton = checked
-                                            sharedPrefs.edit().putBoolean("show_btn_tts", checked).apply()
-                                        }
+                                // Single line preview box
+                                Card(
+                                    onClick = { tempDoubleLine = false },
+                                    modifier = Modifier.weight(1f).height(65.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = if (!tempDoubleLine) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (!tempDoubleLine) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                     )
+                                ) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.StayCurrentPortrait, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Icon(Icons.Default.Brightness4, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Icon(Icons.Default.UnfoldMore, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Icon(Icons.Default.FormatListBulleted, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Icon(Icons.Default.MoreHoriz, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+
+                                // Double line preview box
+                                Card(
+                                    onClick = { tempDoubleLine = true },
+                                    modifier = Modifier.weight(1f).height(65.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = if (tempDoubleLine) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (tempDoubleLine) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                ) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Icon(Icons.Default.StayCurrentPortrait, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Icon(Icons.Default.Brightness4, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Icon(Icons.Default.UnfoldMore, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Icon(Icons.Default.FormatListBulleted, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Icon(Icons.Default.MoreHoriz, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                            
-                            // Translate
-                            Row(
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                            // Scrollable list of actions
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("Translate Panel")
-                                Switch(
-                                    checked = showTranslateButton,
-                                    onCheckedChange = { checked ->
-                                        showTranslateButton = checked
-                                        sharedPrefs.edit().putBoolean("show_btn_translate", checked).apply()
+                                tempOrderList.forEachIndexed { index, id ->
+                                    val name = defaultButtons.find { it.first == id }?.second ?: id
+                                    val isEnabled = tempEnabledMap[id] == true
+                                    
+                                    val buttonIcon = when (id) {
+                                        "orientation" -> Icons.Default.StayCurrentPortrait
+                                        "daynight" -> Icons.Default.Brightness4
+                                        "speak" -> Icons.AutoMirrored.Filled.VolumeUp
+                                        "fontsize" -> Icons.Default.FormatSize
+                                        "autoscroll" -> Icons.Default.UnfoldMore
+                                        "chapters" -> Icons.Default.FormatListBulleted
+                                        "bookmarks" -> Icons.Default.BookmarkBorder
+                                        "brightness" -> Icons.Default.WbSunny
+                                        "search" -> Icons.Default.Search
+                                        "tilt" -> Icons.Default.ScreenLockRotation
+                                        "visual" -> Icons.Default.RemoveRedEye
+                                        "control" -> Icons.Default.SettingsApplications
+                                        "misc" -> Icons.Default.BlurOn
+                                        "customize" -> Icons.Default.MoreHoriz
+                                        else -> Icons.Default.Help
                                     }
-                                )
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = buttonIcon,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Checkbox(
+                                                checked = isEnabled,
+                                                onCheckedChange = { tempEnabledMap[id] = it }
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        
+                                        // Reorder arrows
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    if (index > 0) {
+                                                        val newList = tempOrderList.toMutableList()
+                                                        val temp = newList[index]
+                                                        newList[index] = newList[index - 1]
+                                                        newList[index - 1] = temp
+                                                        tempOrderList = newList
+                                                    }
+                                                },
+                                                enabled = index > 0,
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                                    contentDescription = "Move Up",
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = {
+                                                    if (index < tempOrderList.size - 1) {
+                                                        val newList = tempOrderList.toMutableList()
+                                                        val temp = newList[index]
+                                                        newList[index] = newList[index + 1]
+                                                        newList[index + 1] = temp
+                                                        tempOrderList = newList
+                                                    }
+                                                },
+                                                enabled = index < tempOrderList.size - 1,
+                                                modifier = Modifier.size(30.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                                    contentDescription = "Move Down",
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     },
-                    confirmButton = {
+                    dismissButton = {
                         TextButton(onClick = { isCustomizeReaderBarDialogOpen = false }) {
-                            Text("Done")
+                            Text("CANCEL")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            // Persist changes
+                            buttonOrderList = tempOrderList
+                            tempEnabledMap.forEach { (k, v) ->
+                                buttonEnabledMap[k] = v
+                                sharedPrefs.edit().putBoolean("reader_bar_enabled_$k", v).apply()
+                            }
+                            isDoubleLineLayout = tempDoubleLine
+                            sharedPrefs.edit().putBoolean("reader_bar_double_line", tempDoubleLine).apply()
+                            sharedPrefs.edit().putString("reader_bar_order", tempOrderList.joinToString(",")).apply()
+                            
+                            isCustomizeReaderBarDialogOpen = false
+                        }) {
+                            Text("OK")
                         }
                     }
                 )

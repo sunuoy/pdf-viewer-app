@@ -1,6 +1,6 @@
 # Release v1.1.4 - PDF Viewer & Multi-Format Reader
 
-This release introduces comprehensive multi-format support, organized 3-dot options menu, and quick-action bar customization.
+This release introduces comprehensive multi-format support, organized 3-dot options menu, and Moon+ Reader style quick-action bar customization.
 
 ## New Features
 
@@ -24,7 +24,10 @@ The viewer top bar's 3-dot menu has been reorganized:
 * **Control Options** (Auto-scroll, orientation rotation, TTS reader toggle)
 * **Misc Options** (Day/night theme inversion, language settings, offline translation center)
 
-### 4. Customizable Bottom Reader Bar
-Customize the quick-action icons displayed in the bottom reader bar:
-* Open the **Customize Reader Bar** dialog from the 3-dot menu to select which buttons (Auto Scroll, Scroll Direction, Search, TTS, Translate) appear.
+### 4. Customizable Bottom Reader Bar (Moon+ style)
+Fully customize the quick-action icons displayed in the bottom reader bar:
+* Toggle **Double-line layout** or single-line layout with live visual card previews.
+* Enable/disable and **reorder** quick-action buttons (Screen Orientation, Day/Night Mode, Speak/TTS, Font Size, Autoscroll, Chapters, Bookmarks, Brightness, Search, Allow tilt device to turn page, Visual Options, Control Options, Miscellaneous, Customize reader bar buttons).
+* Reorder buttons instantly using Up/Down arrow controllers.
 * Settings are automatically saved to persistent device storage.
+* Includes accelerometer-based **Tilt-to-turn-page** detection and dim brightness overlay functionality.
