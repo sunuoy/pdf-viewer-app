@@ -2575,8 +2575,8 @@ fun PdfViewerScreen(
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
                                                 text = name,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                maxLines = 1,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
