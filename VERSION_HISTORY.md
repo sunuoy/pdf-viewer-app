@@ -18,6 +18,20 @@ This file tracks all modifications, updates, and releases for the PDF Viewer App
 ### 4. Assets Synchronization
 - During application startup, check the active dynamic version and perform any necessary file or cache migrations (like asset copying) to match the new bundle layout.
 
+## [V 1.2.0] - Collapsible Menu & Ruler Settings - 2026-07-04
+### Added
+- **Collapsible Options Menu**: Main dropdown menu categories are now collapsible with chevron arrow indicators.
+- **Custom Ruler Settings Dialog**: Floating configuration panel with sliders for ruler height, stripe height, opacity, and selectable color circles.
+- **Ruler Double-Tap Shortcut**: Double-tapping the Ruler quick-action button in the bottom reader bar instantly launches the settings dialog.
+- **Ruler Menu Entry**: Added "Ruler Settings" to the options menu under Misc Options.
+
+## [V 1.1.20] - Multi-Format & Comic Reader - 2026-07-04
+### Added
+- **Multi-Format Support**: Opened document formats including DOCX, ODT, RTF, UMD, and CHM.
+- **Comic Reader (CBZ & CBR)**: Supported zip and rar comic books with sorting and on-demand loading.
+- **Customizable Bottom Reader Bar**: Added double-line layout toggle, visibility controls, reordering buttons list, and accelerometer-based tilt-to-turn-page functionality.
+- **Draggable Reading Ruler**: Interactive, semi-transparent highlight ruler bar that can be dragged vertically to focus on reading lines.
+
 ## [V 1.0.3] - Scrollbar & Menu Updates - 2026-07-02
 ### Added
 - **Custom Page Scrollbars**: Added highly elegant vertical and horizontal scrollbar tracks with smooth thumbs dynamically positioned based on current list scroll fraction.
