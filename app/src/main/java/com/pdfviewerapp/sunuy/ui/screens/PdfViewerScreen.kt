@@ -2298,40 +2298,26 @@ fun PdfViewerScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(45.dp)
+                            .padding(horizontal = 16.dp)
+                            .height(55.dp)
                             .offset(y = with(density) { rulerYOffset.toDp() })
-                            .background(Color(0x3DFFEB3B)) // Translucent yellow highlight
-                            .border(1.dp, Color(0x99FFEB3B))
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xD95A6275)) // Slate grey with 85% opacity
                             .pointerInput(Unit) {
                                 detectDragGestures { change, dragAmount ->
                                     change.consume()
                                     rulerYOffset = (rulerYOffset + dragAmount.y).coerceIn(50f, 1800f)
                                     sharedPrefs.edit().putFloat("reading_ruler_y", rulerYOffset).apply()
                                 }
-                            }
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
-                        // Horizontal divider guides at top and bottom of the highlight ruler
+                        // Horizontal green stripe in the middle
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(1.dp)
-                                .background(Color(0xB3FFEB3B))
-                                .align(Alignment.TopCenter)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(Color(0xB3FFEB3B))
-                                .align(Alignment.BottomCenter)
-                        )
-                        // A small interactive central grab indicator handle
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .width(50.dp)
-                                .height(5.dp)
-                                .background(Color(0x807E57C2), RoundedCornerShape(2.5.dp))
+                                .height(12.dp)
+                                .background(Color(0xFFADC89F)) // Soft light green focus line
                         )
                     }
                 }
