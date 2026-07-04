@@ -2302,7 +2302,7 @@ fun PdfViewerScreen(
                             .height(55.dp)
                             .offset(y = with(density) { rulerYOffset.toDp() })
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xD95A6275)) // Slate grey with 85% opacity
+                            .background(Color(0xE63E4756)) // Deeper blue-slate grey with 90% opacity
                             .pointerInput(Unit) {
                                 detectDragGestures { change, dragAmount ->
                                     change.consume()
@@ -2317,7 +2317,7 @@ fun PdfViewerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(12.dp)
-                                .background(Color(0xFFADC89F)) // Soft light green focus line
+                                .background(Color(0xFF84AF76)) // Deeper, richer focus green stripe
                         )
                     }
                 }
