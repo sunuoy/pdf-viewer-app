@@ -27,7 +27,8 @@ The viewer top bar's 3-dot menu has been reorganized:
 ### 4. Customizable Bottom Reader Bar (Moon+ style)
 Fully customize the quick-action icons displayed in the bottom reader bar:
 * Toggle **Double-line layout** or single-line layout with live visual card previews.
-* Enable/disable and **reorder** quick-action buttons (Screen Orientation, Day/Night Mode, Speak/TTS, Font Size, Autoscroll, Chapters, Bookmarks, Brightness, Search, Allow tilt device to turn page, Visual Options, Control Options, Miscellaneous, Customize reader bar buttons).
+* Enable/disable and **reorder** quick-action buttons (Screen Orientation, Day/Night Mode, Speak/TTS, Font Size, Autoscroll, Chapters, Bookmarks, Brightness, Search, Allow tilt device to turn page, Reading Ruler, Visual Options, Control Options, Miscellaneous, Customize reader bar buttons).
 * Reorder buttons instantly using Up/Down arrow controllers.
 * Settings are automatically saved to persistent device storage.
 * Includes accelerometer-based **Tilt-to-turn-page** detection and dim brightness overlay functionality.
+* **Draggable Reading Ruler**: Interactive, semi-transparent highlight ruler bar that users can enable and drag vertically to focus on active reading lines.

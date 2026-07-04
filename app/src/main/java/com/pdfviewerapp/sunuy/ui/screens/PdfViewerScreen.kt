@@ -22,6 +22,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -67,6 +68,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -179,6 +181,7 @@ fun PdfViewerScreen(
             "brightness" to "Brightness",
             "search" to "Search",
             "tilt" to "Allow tilt device to turn page",
+            "ruler" to "Reading Ruler",
             "visual" to "Visual Options",
             "control" to "Control Options",
             "misc" to "Miscellaneous",
@@ -187,7 +190,19 @@ fun PdfViewerScreen(
     }
 
     val savedOrder = remember {
-        sharedPrefs.getString("reader_bar_order", "orientation,daynight,speak,fontsize,autoscroll,chapters,bookmarks,brightness,search,tilt,visual,control,misc,customize") ?: "orientation,daynight,speak,fontsize,autoscroll,chapters,bookmarks,brightness,search,tilt,visual,control,misc,customize"
+        val raw = sharedPrefs.getString("reader_bar_order", null)
+        if (raw == null) {
+            "orientation,daynight,speak,fontsize,autoscroll,chapters,bookmarks,brightness,search,tilt,ruler,visual,control,misc,customize"
+        } else {
+            val keys = raw.split(",").filter { it.isNotEmpty() }.toMutableList()
+            val defaultKeys = listOf("orientation", "daynight", "speak", "fontsize", "autoscroll", "chapters", "bookmarks", "brightness", "search", "tilt", "ruler", "visual", "control", "misc", "customize")
+            defaultKeys.forEach { key ->
+                if (key !in keys) {
+                    keys.add(key)
+                }
+            }
+            keys.joinToString(",")
+        }
     }
     
     var buttonOrderList by remember { mutableStateOf(savedOrder.split(",").filter { it.isNotEmpty() }) }
@@ -195,7 +210,7 @@ fun PdfViewerScreen(
     val buttonEnabledMap = remember {
         mutableStateMapOf<String, Boolean>().apply {
             defaultButtons.forEach { (id, _) ->
-                val defaultVal = id in listOf("orientation", "daynight", "speak", "fontsize", "autoscroll", "chapters", "bookmarks", "brightness", "search", "customize")
+                val defaultVal = id in listOf("orientation", "daynight", "speak", "fontsize", "autoscroll", "chapters", "bookmarks", "brightness", "search", "ruler", "customize")
                 put(id, sharedPrefs.getBoolean("reader_bar_enabled_$id", defaultVal))
             }
         }
@@ -206,6 +221,8 @@ fun PdfViewerScreen(
     
     // Custom button action states
     var isTiltToTurnPageEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_tilt_to_turn_page", false)) }
+    var isReadingRulerEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_reading_ruler_enabled", false)) }
+    var rulerYOffset by remember { mutableStateOf(sharedPrefs.getFloat("reading_ruler_y", 400f)) }
     var textFontSize by remember { mutableStateOf(sharedPrefs.getFloat("text_font_size", 16f)) }
     var isScreenDimmed by remember { mutableStateOf(false) }
     var isDarkThemeInverted by remember { mutableStateOf(false) }
@@ -1064,14 +1081,18 @@ fun PdfViewerScreen(
                             }
                         }
                         "fontsize" -> {
-                            if (isTextDocument) {
-                                IconButton(onClick = { cycleFontSize() }) {
-                                    Icon(
-                                        imageVector = Icons.Default.FormatSize,
-                                        contentDescription = "Font Size",
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
+                            IconButton(onClick = {
+                                if (isTextDocument) {
+                                    cycleFontSize()
+                                } else {
+                                    Toast.makeText(context, "Font size adjustment is only supported for reflowable text. Use pinch-to-zoom for PDFs.", Toast.LENGTH_LONG).show()
                                 }
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.FormatSize,
+                                    contentDescription = "Font Size",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
                         "autoscroll" -> {
@@ -1151,6 +1172,19 @@ fun PdfViewerScreen(
                                     imageVector = Icons.Default.ScreenLockRotation,
                                     contentDescription = "Allow tilt device to turn page",
                                     tint = if (isTiltToTurnPageEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                        "ruler" -> {
+                            IconButton(onClick = {
+                                isReadingRulerEnabled = !isReadingRulerEnabled
+                                sharedPrefs.edit().putBoolean("is_reading_ruler_enabled", isReadingRulerEnabled).apply()
+                                Toast.makeText(context, "Reading Ruler: ${if (isReadingRulerEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.HorizontalSplit,
+                                    contentDescription = "Reading Ruler",
+                                    tint = if (isReadingRulerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -2254,6 +2288,54 @@ fun PdfViewerScreen(
                 }
             }
 
+            // Reading Ruler Overlay
+            if (isReadingRulerEnabled) {
+                val density = LocalDensity.current
+                Box(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(45.dp)
+                            .offset(y = with(density) { rulerYOffset.toDp() })
+                            .background(Color(0x3DFFEB3B)) // Translucent yellow highlight
+                            .border(1.dp, Color(0x99FFEB3B))
+                            .pointerInput(Unit) {
+                                detectDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    rulerYOffset = (rulerYOffset + dragAmount.y).coerceIn(50f, 1800f)
+                                    sharedPrefs.edit().putFloat("reading_ruler_y", rulerYOffset).apply()
+                                }
+                            }
+                    ) {
+                        // Horizontal divider guides at top and bottom of the highlight ruler
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Color(0xB3FFEB3B))
+                                .align(Alignment.TopCenter)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Color(0xB3FFEB3B))
+                                .align(Alignment.BottomCenter)
+                        )
+                        // A small interactive central grab indicator handle
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .width(50.dp)
+                                .height(5.dp)
+                                .background(Color(0x807E57C2), RoundedCornerShape(2.5.dp))
+                        )
+                    }
+                }
+            }
+
             // Offline Translation Model Manager Dialog
             if (isModelManagerOpen) {
                 AlertDialog(
@@ -2460,6 +2542,7 @@ fun PdfViewerScreen(
                                         "brightness" -> Icons.Default.WbSunny
                                         "search" -> Icons.Default.Search
                                         "tilt" -> Icons.Default.ScreenLockRotation
+                                        "ruler" -> Icons.Default.HorizontalSplit
                                         "visual" -> Icons.Default.RemoveRedEye
                                         "control" -> Icons.Default.SettingsApplications
                                         "misc" -> Icons.Default.BlurOn
