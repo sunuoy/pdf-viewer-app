@@ -51,7 +51,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -814,7 +814,7 @@ fun PdfViewerScreen(
                 },
                 navigationIcon = {
                     TooltipIconButton(onClick = onBack, tooltipText = "Back") {
-                        Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -1001,7 +1001,7 @@ fun PdfViewerScreen(
                                     },
                                     leadingIcon = {
                                         Icon(
-                                            imageVector = if (isTtsActive) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                                            imageVector = if (isTtsActive) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                                             contentDescription = null
                                         )
                                     }
@@ -1130,7 +1130,7 @@ fun PdfViewerScreen(
                         "chapters" -> {
                             TooltipIconButton(onClick = { onNavigateToBookmarks() }, tooltipText = "Open Bookmarks") {
                                 Icon(
-                                    imageVector = Icons.Default.FormatListBulleted,
+                                    imageVector = Icons.AutoMirrored.Filled.FormatListBulleted,
                                     contentDescription = "Open Bookmarks",
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
@@ -1529,7 +1529,7 @@ fun PdfViewerScreen(
                                                             onClick = { ttsService.startSpeaking(translationText) }
                                                         ) {
                                                             Icon(
-                                                                imageVector = Icons.Default.VolumeUp,
+                                                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                                                                 contentDescription = "Speak translation",
                                                                 tint = MaterialTheme.colorScheme.primary
                                                             )
@@ -2032,7 +2032,7 @@ fun PdfViewerScreen(
                                             }
                                         }
                                     ) {
-                                        Icon(Icons.Default.ArrowBack, contentDescription = "Prev match")
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Prev match")
                                     }
                                     IconButton(
                                         onClick = {
@@ -2043,7 +2043,7 @@ fun PdfViewerScreen(
                                             }
                                         }
                                     ) {
-                                        Icon(Icons.Default.ArrowForward, contentDescription = "Next match")
+                                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next match")
                                     }
                                 }
                             }
@@ -2521,7 +2521,7 @@ fun PdfViewerScreen(
                                             Icon(Icons.Default.StayCurrentPortrait, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                             Icon(Icons.Default.Brightness4, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                             Icon(Icons.Default.UnfoldMore, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            Icon(Icons.Default.FormatListBulleted, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Icon(Icons.AutoMirrored.Filled.FormatListBulleted, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                             Icon(Icons.Default.MoreHoriz, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
@@ -2548,7 +2548,7 @@ fun PdfViewerScreen(
                                                 Icon(Icons.Default.UnfoldMore, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                             }
                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                Icon(Icons.Default.FormatListBulleted, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Icon(Icons.AutoMirrored.Filled.FormatListBulleted, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 Icon(Icons.Default.MoreHoriz, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                             }
                                         }
@@ -2573,7 +2573,7 @@ fun PdfViewerScreen(
                                         "speak" -> Icons.AutoMirrored.Filled.VolumeUp
                                         "fontsize" -> Icons.Default.FormatSize
                                         "autoscroll" -> Icons.Default.UnfoldMore
-                                        "chapters" -> Icons.Default.FormatListBulleted
+                                        "chapters" -> Icons.AutoMirrored.Filled.FormatListBulleted
                                         "bookmarks" -> Icons.Default.BookmarkBorder
                                         "brightness" -> Icons.Default.WbSunny
                                         "search" -> Icons.Default.Search
@@ -2583,7 +2583,7 @@ fun PdfViewerScreen(
                                         "control" -> Icons.Default.SettingsApplications
                                         "misc" -> Icons.Default.BlurOn
                                         "customize" -> Icons.Default.MoreHoriz
-                                        else -> Icons.Default.Help
+                                        else -> Icons.AutoMirrored.Filled.Help
                                     }
 
                                     Row(

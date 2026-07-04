@@ -30,16 +30,16 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Article
-import androidx.compose.material.icons.filled.CallMerge
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.CallMerge
+import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.CropOriginal
-import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -1070,7 +1070,7 @@ fun HomeScreen(
                                         }
                                     }
                                 },
-                                leadingIcon = { Icon(Icons.Default.Article, contentDescription = null) }
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Article, contentDescription = null) }
                             )
 
                             DropdownMenuItem(
@@ -1100,7 +1100,7 @@ fun HomeScreen(
                                     isMenuExpanded = false
                                     (context as? android.app.Activity)?.finish()
                                 },
-                                leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                             )
                         }
                     }
@@ -1573,7 +1573,7 @@ fun HomeScreen(
                         tool = EditorTool.PDF_TO_WORD,
                         title = "PDF to Word",
                         description = "Convert text into editable .doc file",
-                        icon = Icons.Default.Article,
+                        icon = Icons.AutoMirrored.Filled.Article,
                         gradientColors = listOf(Color(0xFF1E88E5), Color(0xFF90CAF9))
                     ),
                     EditorToolItem(
@@ -1587,14 +1587,14 @@ fun HomeScreen(
                         tool = EditorTool.MERGE_PDFS,
                         title = "Merge PDFs",
                         description = "Combine 2 or more PDF documents",
-                        icon = Icons.Default.CallMerge,
+                        icon = Icons.AutoMirrored.Filled.CallMerge,
                         gradientColors = listOf(Color(0xFFE53935), Color(0xFFEF9A9A))
                     ),
                     EditorToolItem(
                         tool = EditorTool.SPLIT_PDF,
                         title = "Split PDF",
                         description = "Separate pages into single files",
-                        icon = Icons.Default.CallSplit,
+                        icon = Icons.AutoMirrored.Filled.CallSplit,
                         gradientColors = listOf(Color(0xFF3F51B5), Color(0xFF9FA8DA))
                     ),
                     EditorToolItem(
@@ -1608,7 +1608,7 @@ fun HomeScreen(
                         tool = EditorTool.ROTATE_PDF,
                         title = "Rotate Pages",
                         description = "Adjust document page rotation",
-                        icon = Icons.Default.RotateRight,
+                        icon = Icons.AutoMirrored.Filled.RotateRight,
                         gradientColors = listOf(Color(0xFFD81B60), Color(0xFFF48FB1))
                     ),
                     EditorToolItem(
