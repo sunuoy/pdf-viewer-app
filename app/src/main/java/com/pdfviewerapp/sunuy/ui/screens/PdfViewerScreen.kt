@@ -2317,7 +2317,7 @@ fun PdfViewerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(12.dp)
-                                .background(Color(0xFF84AF76)) // Deeper, richer focus green stripe
+                                .background(Color(0xE684AF76)) // Deeper focus green stripe with 90% opacity
                         )
                     }
                 }
