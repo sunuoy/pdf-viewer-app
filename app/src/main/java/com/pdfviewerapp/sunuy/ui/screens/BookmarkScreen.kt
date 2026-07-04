@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.pdfviewerapp.sunuy.ui.components.TooltipIconButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,7 +55,7 @@ fun BookmarkScreen(
             TopAppBar(
                 title = { Text("Bookmarks", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    TooltipIconButton(onClick = onBack, tooltipText = "Back") {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -157,12 +158,13 @@ fun BookmarkScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.width(8.dp))
-                            IconButton(
+                            TooltipIconButton(
                                 onClick = {
                                     scope.launch {
                                         database.bookmarkDao().deleteBookmark(bookmark)
                                     }
-                                }
+                                },
+                                tooltipText = "Delete Bookmark"
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,

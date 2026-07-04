@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.pdfviewerapp.sunuy.ui.components.TooltipIconButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,7 +55,7 @@ fun SettingsScreen(
                     Text("Settings", fontWeight = FontWeight.Bold)
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    TooltipIconButton(onClick = onBack, tooltipText = "Back") {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }

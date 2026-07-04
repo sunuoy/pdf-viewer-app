@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.pdfviewerapp.sunuy.data.AppDatabase
+import com.pdfviewerapp.sunuy.ui.components.TooltipIconButton
 import com.pdfviewerapp.sunuy.data.entities.RecentPdf
 import com.pdfviewerapp.sunuy.services.PdfTextService
 import com.tom_roush.pdfbox.multipdf.PDFMergerUtility
@@ -998,7 +999,7 @@ fun HomeScreen(
                 ),
                 actions = {
                     Box {
-                        IconButton(onClick = { isMenuExpanded = true }) {
+                        TooltipIconButton(onClick = { isMenuExpanded = true }, tooltipText = "More Options") {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "More options menu",
@@ -1831,25 +1832,27 @@ fun HomeScreen(
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                     Row {
-                                        IconButton(
+                                        TooltipIconButton(
                                             onClick = {
                                                 if (index > 0) {
                                                     val item = mergeReorderList.removeAt(index)
                                                     mergeReorderList.add(index - 1, item)
                                                 }
                                             },
-                                            enabled = index > 0
+                                            enabled = index > 0,
+                                            tooltipText = "Move Up"
                                         ) {
                                             Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up")
                                         }
-                                        IconButton(
+                                        TooltipIconButton(
                                             onClick = {
                                                 if (index < mergeReorderList.size - 1) {
                                                     val item = mergeReorderList.removeAt(index)
                                                     mergeReorderList.add(index + 1, item)
                                                 }
                                             },
-                                            enabled = index < mergeReorderList.size - 1
+                                            enabled = index < mergeReorderList.size - 1,
+                                            tooltipText = "Move Down"
                                         ) {
                                             Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down")
                                         }
@@ -2666,8 +2669,9 @@ fun RecentPdfItem(
                 }
             }
             Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = onDelete
+            TooltipIconButton(
+                onClick = onDelete,
+                tooltipText = "Delete from History"
             ) {
                 Icon(
                     imageVector = Icons.Default.Delete,

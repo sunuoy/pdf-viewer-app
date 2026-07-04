@@ -1,14 +1,16 @@
 package com.pdfviewerapp.sunuy.services
 
 enum class AutoScrollMode(val displayName: String) {
-    ROLLING_BLIND("Rolling Blind"),
-    BY_PIXEL("By Pixel"),
-    BY_LINE("By Line"),
-    BY_PAGE("By Page")
+    ROLLING_BLIND_PIXEL("Rolling blind by pixel"),
+    ROLLING_BLIND_LINE("Rolling blind by line"),
+    BY_PIXEL("Scroll by pixel"),
+    BY_LINE("Scroll by line"),
+    BY_PAGE("Scroll by page"),
+    RSVP("Speed read (RSVP)")
 }
 
 data class AutoScrollState(
     val isActive: Boolean = false,
     val mode: AutoScrollMode = AutoScrollMode.BY_PIXEL,
-    val speedMultiplier: Float = 1.0f // 0.5x to 5.0x
+    val speedMultiplier: Float = 1.0f
 )

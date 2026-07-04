@@ -26,6 +26,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.scrollBy
@@ -85,8 +86,10 @@ import com.pdfviewerapp.sunuy.services.TranslationService
 import com.pdfviewerapp.sunuy.services.TtsService
 import com.pdfviewerapp.sunuy.services.TtsState
 import com.pdfviewerapp.sunuy.ui.PdfSessionViewModel
+import com.pdfviewerapp.sunuy.ui.components.TooltipIconButton
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import com.pdfviewerapp.sunuy.services.AutoScrollMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -99,6 +102,13 @@ import androidx.compose.ui.platform.LocalDensity
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
+
+enum class ViewerSubPage {
+    NONE,
+    PDF_DOCUMENT_OPTIONS,
+    CONTROL_OPTIONS,
+    MISC_OPTIONS
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -270,6 +280,8 @@ fun PdfViewerScreen(
     var replacementText by remember { mutableStateOf("") }
     var isPdfEditorSaving by remember { mutableStateOf(false) }
     var pdfReloadTrigger by remember { mutableStateOf(0) }
+
+    var activeSubPage by remember { mutableStateOf(ViewerSubPage.NONE) }
 
     fun startTtsForPage(pageIndex: Int) {
         if (isTtsLoading) return
@@ -766,8 +778,12 @@ fun PdfViewerScreen(
                         listState.animateScrollToItem(currentPageIndex + 1)
                     }
                 }
-                AutoScrollMode.ROLLING_BLIND -> {
+                AutoScrollMode.ROLLING_BLIND_PIXEL,
+                AutoScrollMode.ROLLING_BLIND_LINE -> {
                     rollingBlindY = (rollingBlindY + (3f * autoScrollSpeed)) % 800f
+                    delay(16L)
+                }
+                else -> {
                     delay(16L)
                 }
             }
@@ -797,35 +813,41 @@ fun PdfViewerScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    TooltipIconButton(onClick = onBack, tooltipText = "Back") {
                         Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { isDarkThemeInverted = !isDarkThemeInverted }) {
+                    TooltipIconButton(
+                        onClick = { isDarkThemeInverted = !isDarkThemeInverted },
+                        tooltipText = "Toggle Dark Theme Inversion"
+                    ) {
                         Icon(
                             imageVector = if (isDarkThemeInverted) Icons.Default.LightMode else Icons.Default.DarkMode,
                             contentDescription = "Day/Night Mode Inversion"
                         )
                     }
-                    IconButton(onClick = {
-                        scope.launch {
-                            if (isCurrentPageBookmarked) {
-                                bookmarks.find { it.pageNumber == currentPageIndex }?.let {
-                                    database.bookmarkDao().deleteBookmark(it)
-                                }
-                            } else {
-                                database.bookmarkDao().insertBookmark(
-                                    Bookmark(
-                                        pdfPath = pdfPath,
-                                        pageNumber = currentPageIndex,
-                                        note = "Bookmark added at page ${currentPageIndex + 1}",
-                                        timestamp = System.currentTimeMillis()
+                    TooltipIconButton(
+                        onClick = {
+                            scope.launch {
+                                if (isCurrentPageBookmarked) {
+                                    bookmarks.find { it.pageNumber == currentPageIndex }?.let {
+                                        database.bookmarkDao().deleteBookmark(it)
+                                    }
+                                } else {
+                                    database.bookmarkDao().insertBookmark(
+                                        Bookmark(
+                                            pdfPath = pdfPath,
+                                            pageNumber = currentPageIndex,
+                                            note = "Bookmark added at page ${currentPageIndex + 1}",
+                                            timestamp = System.currentTimeMillis()
+                                        )
                                     )
-                                )
+                                }
                             }
-                        }
-                    }) {
+                        },
+                        tooltipText = if (isCurrentPageBookmarked) "Remove Bookmark" else "Add Bookmark"
+                    ) {
                         Icon(
                             imageVector = if (isCurrentPageBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                             contentDescription = "Bookmark",
@@ -833,7 +855,7 @@ fun PdfViewerScreen(
                         )
                     }
                     Box {
-                        IconButton(onClick = { isMenuExpanded = true }) {
+                        TooltipIconButton(onClick = { isMenuExpanded = true }, tooltipText = "More Options") {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "More options menu",
@@ -1046,7 +1068,7 @@ fun PdfViewerScreen(
                 val ReaderBarButtonIcon = @Composable { id: String ->
                     when (id) {
                         "orientation" -> {
-                            IconButton(onClick = { toggleScreenOrientation() }) {
+                            TooltipIconButton(onClick = { toggleScreenOrientation() }, tooltipText = "Screen Orientation") {
                                 Icon(
                                     imageVector = Icons.Default.StayCurrentPortrait,
                                     contentDescription = "Screen Orientation",
@@ -1055,7 +1077,7 @@ fun PdfViewerScreen(
                             }
                         }
                         "daynight" -> {
-                            IconButton(onClick = { isDarkThemeInverted = !isDarkThemeInverted }) {
+                            TooltipIconButton(onClick = { isDarkThemeInverted = !isDarkThemeInverted }, tooltipText = "Toggle Dark Theme Inversion") {
                                 Icon(
                                     imageVector = if (isDarkThemeInverted) Icons.Default.LightMode else Icons.Default.DarkMode,
                                     contentDescription = "Day/Night Mode Inversion",
@@ -1065,14 +1087,14 @@ fun PdfViewerScreen(
                         }
                         "speak" -> {
                             if (!isComicBook) {
-                                IconButton(onClick = {
+                                TooltipIconButton(onClick = {
                                     if (isTtsActive) {
                                         ttsService.stop()
                                         isTtsActive = false
                                     } else {
                                         startTtsForPage(currentPageIndex)
                                     }
-                                }) {
+                                }, tooltipText = "Read Aloud (TTS)") {
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.VolumeUp,
                                         contentDescription = "TTS Read Page",
@@ -1082,13 +1104,13 @@ fun PdfViewerScreen(
                             }
                         }
                         "fontsize" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 if (isTextDocument) {
                                     cycleFontSize()
                                 } else {
                                     Toast.makeText(context, "Font size adjustment is only supported for reflowable text. Use pinch-to-zoom for PDFs.", Toast.LENGTH_LONG).show()
                                 }
-                            }) {
+                            }, tooltipText = "Font Size") {
                                 Icon(
                                     imageVector = Icons.Default.FormatSize,
                                     contentDescription = "Font Size",
@@ -1097,7 +1119,7 @@ fun PdfViewerScreen(
                             }
                         }
                         "autoscroll" -> {
-                            IconButton(onClick = { isAutoScrollActive = !isAutoScrollActive }) {
+                            TooltipIconButton(onClick = { isAutoScrollActive = !isAutoScrollActive }, tooltipText = "Auto Scroll") {
                                 Icon(
                                     imageVector = if (isAutoScrollActive) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
                                     contentDescription = "Auto Scroll",
@@ -1106,7 +1128,7 @@ fun PdfViewerScreen(
                             }
                         }
                         "chapters" -> {
-                            IconButton(onClick = { onNavigateToBookmarks() }) {
+                            TooltipIconButton(onClick = { onNavigateToBookmarks() }, tooltipText = "Open Bookmarks") {
                                 Icon(
                                     imageVector = Icons.Default.FormatListBulleted,
                                     contentDescription = "Open Bookmarks",
@@ -1115,7 +1137,7 @@ fun PdfViewerScreen(
                             }
                         }
                         "bookmarks" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 scope.launch {
                                     if (isCurrentPageBookmarked) {
                                         bookmarks.find { it.pageNumber == currentPageIndex }?.let {
@@ -1132,7 +1154,7 @@ fun PdfViewerScreen(
                                         )
                                     }
                                 }
-                            }) {
+                            }, tooltipText = if (isCurrentPageBookmarked) "Remove Bookmark" else "Add Bookmark") {
                                 Icon(
                                     imageVector = if (isCurrentPageBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
                                     contentDescription = "Bookmark",
@@ -1141,7 +1163,7 @@ fun PdfViewerScreen(
                             }
                         }
                         "brightness" -> {
-                            IconButton(onClick = { toggleScreenBrightness() }) {
+                            TooltipIconButton(onClick = { toggleScreenBrightness() }, tooltipText = "Toggle Brightness Overlay") {
                                 Icon(
                                     imageVector = Icons.Default.WbSunny,
                                     contentDescription = "Brightness Overlay",
@@ -1150,12 +1172,12 @@ fun PdfViewerScreen(
                             }
                         }
                         "search" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 isSearchActive = !isSearchActive
                                 if (!isSearchActive) {
                                     searchQuery = ""
                                 }
-                            }) {
+                            }, tooltipText = "Search Text") {
                                 Icon(
                                     imageVector = Icons.Default.Search,
                                     contentDescription = "Search text",
@@ -1164,11 +1186,11 @@ fun PdfViewerScreen(
                             }
                         }
                         "tilt" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 isTiltToTurnPageEnabled = !isTiltToTurnPageEnabled
                                 sharedPrefs.edit().putBoolean("is_tilt_to_turn_page", isTiltToTurnPageEnabled).apply()
                                 Toast.makeText(context, "Tilt Page Turn: ${if (isTiltToTurnPageEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
-                            }) {
+                            }, tooltipText = "Tilt Page Turn") {
                                 Icon(
                                     imageVector = Icons.Default.ScreenLockRotation,
                                     contentDescription = "Allow tilt device to turn page",
@@ -1177,11 +1199,11 @@ fun PdfViewerScreen(
                             }
                         }
                         "ruler" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 isReadingRulerEnabled = !isReadingRulerEnabled
                                 sharedPrefs.edit().putBoolean("is_reading_ruler_enabled", isReadingRulerEnabled).apply()
                                 Toast.makeText(context, "Ruler: ${if (isReadingRulerEnabled) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
-                            }) {
+                            }, tooltipText = "Ruler") {
                                 Icon(
                                     imageVector = Icons.Default.HorizontalSplit,
                                     contentDescription = "Ruler",
@@ -1190,12 +1212,12 @@ fun PdfViewerScreen(
                             }
                         }
                         "visual" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 isTranslationBarActive = !isTranslationBarActive
                                 if (isTranslationBarActive) {
                                     translatePage(currentPageIndex)
                                 }
-                            }) {
+                            }, tooltipText = "Translate/TTS Pane") {
                                 Icon(
                                     imageVector = Icons.Default.RemoveRedEye,
                                     contentDescription = "Translate/TTS Pane",
@@ -1204,9 +1226,9 @@ fun PdfViewerScreen(
                             }
                         }
                         "control" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 isMenuExpanded = true
-                            }) {
+                            }, tooltipText = "Quick Control Options") {
                                 Icon(
                                     imageVector = Icons.Default.SettingsApplications,
                                     contentDescription = "Quick Control Options",
@@ -1215,9 +1237,9 @@ fun PdfViewerScreen(
                             }
                         }
                         "misc" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 isModelManagerOpen = true
-                            }) {
+                            }, tooltipText = "Offline Models Manager") {
                                 Icon(
                                     imageVector = Icons.Default.CloudDownload,
                                     contentDescription = "Offline Models Manager",
@@ -1226,9 +1248,9 @@ fun PdfViewerScreen(
                             }
                         }
                         "customize" -> {
-                            IconButton(onClick = {
+                            TooltipIconButton(onClick = {
                                 isCustomizeReaderBarDialogOpen = true
-                            }) {
+                            }, tooltipText = "Customize Reader Bar Buttons") {
                                 Icon(
                                     imageVector = Icons.Default.MoreHoriz,
                                     contentDescription = "Customize reader bar buttons",
@@ -2031,7 +2053,7 @@ fun PdfViewerScreen(
             }
 
             // Moon+ Reader Rolling Blind Overlay
-            if (isAutoScrollActive && autoScrollMode == AutoScrollMode.ROLLING_BLIND) {
+            if (isAutoScrollActive && (autoScrollMode == AutoScrollMode.ROLLING_BLIND_PIXEL || autoScrollMode == AutoScrollMode.ROLLING_BLIND_LINE)) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val lineY = rollingBlindY % size.height
                     drawLine(
@@ -2164,8 +2186,94 @@ fun PdfViewerScreen(
                         
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                        // Voice Gender Selection Row
-                        if (!isTtsLoading) {
+                        // TTS Controls Panel
+                        if (isTtsLoading) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            }
+                        } else {
+                            // Centered Playback controls Row (Play/Pause/Stop)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                when (ttsState) {
+                                    TtsState.SPEAKING -> {
+                                        FilledIconButton(
+                                            onClick = { ttsService.pause() },
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Pause,
+                                                contentDescription = "Pause",
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        FilledTonalIconButton(
+                                            onClick = { ttsService.stop(); isTtsActive = false },
+                                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                            ),
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Stop,
+                                                contentDescription = "Stop",
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    }
+                                    TtsState.PAUSED -> {
+                                        FilledIconButton(
+                                            onClick = { ttsService.resume() },
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.PlayArrow,
+                                                contentDescription = "Resume",
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        FilledTonalIconButton(
+                                            onClick = { ttsService.stop(); isTtsActive = false },
+                                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                            ),
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Stop,
+                                                contentDescription = "Stop",
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    }
+                                    TtsState.IDLE -> {
+                                        FilledIconButton(
+                                            onClick = { startTtsForPage(currentPageIndex) },
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.PlayArrow,
+                                                contentDescription = "Play",
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Voice Selection Row
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2173,9 +2281,10 @@ fun PdfViewerScreen(
                             ) {
                                 Text(
                                     text = "Voice:",
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(55.dp)
                                 )
                                 FilterChip(
                                     selected = !isMaleTts,
@@ -2190,85 +2299,25 @@ fun PdfViewerScreen(
                                     modifier = Modifier.height(28.dp)
                                 )
                             }
-                        }
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (isTtsLoading) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                }
-                            } else {
+
+                            // Speed Selection Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Speed:",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(55.dp)
+                                )
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    when (ttsState) {
-                                        TtsState.SPEAKING -> {
-                                            IconButton(onClick = { ttsService.pause() }) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Pause,
-                                                    contentDescription = "Pause",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(28.dp)
-                                                )
-                                            }
-                                            IconButton(onClick = { ttsService.stop(); isTtsActive = false }) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Stop,
-                                                    contentDescription = "Stop",
-                                                    tint = MaterialTheme.colorScheme.error,
-                                                    modifier = Modifier.size(28.dp)
-                                                )
-                                            }
-                                        }
-                                        TtsState.PAUSED -> {
-                                            IconButton(onClick = { ttsService.resume() }) {
-                                                Icon(
-                                                    imageVector = Icons.Default.PlayArrow,
-                                                    contentDescription = "Resume",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(28.dp)
-                                                )
-                                            }
-                                            IconButton(onClick = { ttsService.stop(); isTtsActive = false }) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Stop,
-                                                    contentDescription = "Stop",
-                                                    tint = MaterialTheme.colorScheme.error,
-                                                    modifier = Modifier.size(28.dp)
-                                                )
-                                            }
-                                        }
-                                        TtsState.IDLE -> {
-                                            IconButton(onClick = { startTtsForPage(currentPageIndex) }) {
-                                                Icon(
-                                                    imageVector = Icons.Default.PlayArrow,
-                                                    contentDescription = "Play",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(28.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "Speed:",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                     listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
                                         val isSelected = currentTtsSpeed == speed
                                         val speedLabel = if (speed == 1.0f) "Normal" else "${speed}x"
