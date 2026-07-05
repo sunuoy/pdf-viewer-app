@@ -58,19 +58,17 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.TextFields
-import androidx.compose.material.icons.filled.CropRotate
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.AddBox
-import androidx.compose.ui.text.style.TextAlign
-
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Copyright
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.foundation.rememberScrollState
+
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -168,6 +166,26 @@ fun HomeScreen(
     val pdfToImagePageBitmaps = remember { mutableStateListOf<Bitmap?>() }
     var pdfToImagePageCount by remember { mutableStateOf(0) }
     var isPdfToImageLoading by remember { mutableStateOf(false) }
+
+    // Add Password State
+    var showAddPasswordDialog by remember { mutableStateOf(false) }
+    var addPasswordInput by remember { mutableStateOf("") }
+    var addPasswordVisible by remember { mutableStateOf(false) }
+
+    // Remove Password State
+    var showRemovePasswordDialog by remember { mutableStateOf(false) }
+    var removePasswordInput by remember { mutableStateOf("") }
+    var removePasswordVisible by remember { mutableStateOf(false) }
+    var removePasswordError by remember { mutableStateOf<String?>(null) }
+
+    // Add Watermark State
+    var showAddWatermarkDialog by remember { mutableStateOf(false) }
+    var watermarkText by remember { mutableStateOf("CONFIDENTIAL") }
+    var watermarkFontSize by remember { mutableStateOf(45f) }
+    var watermarkRotation by remember { mutableStateOf(45f) }
+    var watermarkColorStr by remember { mutableStateOf("gray") }
+    var watermarkOpacity by remember { mutableStateOf(0.3f) }
+
 
     // Images to PDF State
     val selectedImageUrisForPdf = remember { mutableStateListOf<Uri>() }
@@ -721,8 +739,153 @@ fun HomeScreen(
                                 generatedMimeType = "application/pdf"
                             }
                         }
+                        EditorTool.ADD_PASSWORD -> {
+                            processingMessage = "Securing PDF with password..."
+                            withContext(Dispatchers.IO) {
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
+                                    }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+                                openInputStream(inputUri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input)
+                                    val ap = com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission()
+                                    val spp = com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy(
+                                        addPasswordInput,
+                                        addPasswordInput,
+                                        ap
+                                    )
+                                    spp.encryptionKeyLength = 128
+                                    spp.permissions = ap
+                                    document.protect(spp)
+                                    
+                                    openOutputStream(targetUri)?.use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
+                                }
+                                processedFileUri = targetUri
+                                generatedMimeType = "application/pdf"
+                            }
+                        }
+                        EditorTool.REMOVE_PASSWORD -> {
+                            processingMessage = "Removing password from PDF..."
+                            withContext(Dispatchers.IO) {
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
+                                    }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+                                openInputStream(inputUri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input, removePasswordInput)
+                                    document.setAllSecurityToBeRemoved(true)
+                                    openOutputStream(targetUri)?.use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
+                                }
+                                processedFileUri = targetUri
+                                generatedMimeType = "application/pdf"
+                            }
+                        }
+                        EditorTool.ADD_WATERMARK -> {
+                            processingMessage = "Adding watermark to PDF..."
+                            withContext(Dispatchers.IO) {
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
+                                    }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+                                openInputStream(inputUri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input)
+                                    
+                                    val color = when (watermarkColorStr) {
+                                        "red" -> android.graphics.Color.RED
+                                        "blue" -> android.graphics.Color.BLUE
+                                        "green" -> android.graphics.Color.GREEN
+                                        else -> android.graphics.Color.GRAY
+                                    }
+                                    
+                                    val r = android.graphics.Color.red(color) / 255f
+                                    val g = android.graphics.Color.green(color) / 255f
+                                    val b = android.graphics.Color.blue(color) / 255f
+                                    
+                                    for (page in document.pages) {
+                                        val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
+                                            document,
+                                            page,
+                                            com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND,
+                                            true,
+                                            true
+                                        )
+                                        
+                                        try {
+                                             val extGState = com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState()
+                                             extGState.nonStrokingAlphaConstant = watermarkOpacity
+                                             contentStream.setGraphicsStateParameters(extGState)
+                                         } catch (e: Exception) {
+                                             // Fallback
+                                         }
+                                        
+                                        contentStream.beginText()
+                                        contentStream.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA_BOLD, watermarkFontSize)
+                                        contentStream.setNonStrokingColor(r, g, b)
+                                        
+                                        val mediaBox = page.mediaBox
+                                        val x = mediaBox.width / 2f
+                                        val y = mediaBox.height / 2f
+                                        
+                                        val matrix = com.tom_roush.pdfbox.util.Matrix.getRotateInstance(
+                                            Math.toRadians(watermarkRotation.toDouble()),
+                                            x,
+                                            y
+                                        )
+                                        contentStream.setTextMatrix(matrix)
+                                        
+                                        contentStream.showText(watermarkText)
+                                        contentStream.endText()
+                                        contentStream.close()
+                                    }
+                                    
+                                    openOutputStream(targetUri)?.use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
+                                }
+                                processedFileUri = targetUri
+                                generatedMimeType = "application/pdf"
+                            }
+                        }
                         else -> {}
                     }
+
                     showSuccessDialog = true
                 } catch (e: Exception) {
                     android.util.Log.e("HomeScreen", "Error processing tool", e)
@@ -790,9 +953,54 @@ fun HomeScreen(
                         showRotateDialog = true
                     } else if (tool == EditorTool.PDF_TO_IMAGE) {
                         showPdfToImageDialog = true
+                    } else if (tool == EditorTool.ADD_PASSWORD) {
+                        addPasswordInput = ""
+                        showAddPasswordDialog = true
+                    } else if (tool == EditorTool.ADD_WATERMARK) {
+                        watermarkText = "CONFIDENTIAL"
+                        showAddWatermarkDialog = true
+                    } else if (tool == EditorTool.REMOVE_PASSWORD) {
+                        isProcessing = true
+                        processingMessage = "Checking PDF encryption status..."
+                        val isEncrypted = withContext(Dispatchers.IO) {
+                            var encrypted = false
+                            try {
+                                val tempFile = File(context.cacheDir, "temp_check_${System.currentTimeMillis()}.pdf")
+                                context.contentResolver.openInputStream(inputUri)?.use { input ->
+                                    tempFile.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                try {
+                                    com.tom_roush.pdfbox.pdmodel.PDDocument.load(tempFile).close()
+                                    encrypted = false
+                                } catch (e: Exception) {
+                                    if (e.javaClass.simpleName == "InvalidPasswordException" || 
+                                        e.message?.contains("password", ignoreCase = true) == true || 
+                                        e.message?.contains("encrypted", ignoreCase = true) == true) {
+                                        encrypted = true
+                                    }
+                                } finally {
+                                    tempFile.delete()
+                                }
+                            } catch (e: Exception) {
+                                // Ignore
+                            }
+                            encrypted
+                        }
+                        isProcessing = false
+                        if (isEncrypted) {
+                            removePasswordInput = ""
+                            removePasswordError = null
+                            showRemovePasswordDialog = true
+                        } else {
+                            selectedInputUri = null
+                            Toast.makeText(context, "This PDF is not password protected!", Toast.LENGTH_LONG).show()
+                        }
                     } else {
                         saveEditorFileLauncher.launch(suggestedName)
                     }
+
                 } catch (e: Exception) {
                     android.util.Log.e("HomeScreen", "Error preparing input file", e)
                     Toast.makeText(context, "Failed to load file: ${e.message}", Toast.LENGTH_LONG).show()
@@ -1259,7 +1467,6 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
             ) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1334,211 +1541,128 @@ fun HomeScreen(
                         description = "Compile multiple images to PDF",
                         icon = Icons.Default.CropOriginal,
                         gradientColors = listOf(Color(0xFF00ACC1), Color(0xFFB2EBF2))
+                    ),
+                    EditorToolItem(
+                        tool = EditorTool.ADD_PASSWORD,
+                        title = "Add Password",
+                        description = "Secure document with encryption",
+                        icon = Icons.Default.Lock,
+                        gradientColors = listOf(Color(0xFFD84315), Color(0xFFFF8A65))
+                    ),
+                    EditorToolItem(
+                        tool = EditorTool.REMOVE_PASSWORD,
+                        title = "Remove Password",
+                        description = "Decrypt and unlock document",
+                        icon = Icons.Default.LockOpen,
+                        gradientColors = listOf(Color(0xFF2E7D32), Color(0xFF81C784))
+                    ),
+                    EditorToolItem(
+                        tool = EditorTool.ADD_WATERMARK,
+                        title = "Add Watermark",
+                        description = "Overlay custom text watermark",
+                        icon = Icons.Default.Copyright,
+                        gradientColors = listOf(Color(0xFF6A1B9A), Color(0xFFBA68C8))
                     )
                 )
+
                 
-                val chunkedTools = remember(tools) { tools.chunked(2) }
-                chunkedTools.forEach { rowItems ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        rowItems.forEach { item ->
-                            Card(
-                                onClick = {
-                                    if (item.tool == EditorTool.MERGE_PDFS) {
-                                        mergePickerLauncher.launch(arrayOf("application/pdf"))
-                                    } else if (item.tool == EditorTool.IMAGES_TO_PDF) {
-                                        activeTool = item.tool
-                                        imagePickerLauncher.launch(arrayOf("image/*"))
-                                    } else if (item.tool == EditorTool.ZIP_TO_PDF) {
-                                        activeTool = item.tool
-                                        editorFilePickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
-                                    } else {
-                                        activeTool = item.tool
-                                        editorFilePickerLauncher.launch(arrayOf("application/pdf"))
-                                    }
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(160.dp),
-                                shape = RoundedCornerShape(20.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface
-                                ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                            ) {
-                                Box(modifier = Modifier.fillMaxSize()) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(14.dp),
-                                        verticalArrangement = Arrangement.SpaceBetween
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(tools) { item ->
+                        Card(
+                            onClick = {
+                                if (item.tool == EditorTool.MERGE_PDFS) {
+                                    mergePickerLauncher.launch(arrayOf("application/pdf"))
+                                } else if (item.tool == EditorTool.IMAGES_TO_PDF) {
+                                    activeTool = item.tool
+                                    imagePickerLauncher.launch(arrayOf("image/*"))
+                                } else if (item.tool == EditorTool.ZIP_TO_PDF) {
+                                    activeTool = item.tool
+                                    editorFilePickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                                } else {
+                                    activeTool = item.tool
+                                    editorFilePickerLauncher.launch(arrayOf("application/pdf"))
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Surface(
+                                        modifier = Modifier.size(46.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = Color.Transparent
                                     ) {
-                                        Surface(
-                                            modifier = Modifier.size(46.dp),
-                                            shape = RoundedCornerShape(14.dp),
-                                            color = Color.Transparent
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Brush.linearGradient(item.gradientColors)),
+                                            contentAlignment = Alignment.Center
                                         ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(Brush.linearGradient(item.gradientColors)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = item.icon,
-                                                    contentDescription = null,
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                        }
-                                        
-                                        Column {
-                                            Text(
-                                                text = item.title,
-                                                style = MaterialTheme.typography.titleMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = item.description,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 2,
-                                                lineHeight = 15.sp,
-                                                overflow = TextOverflow.Ellipsis
+                                            Icon(
+                                                imageVector = item.icon,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(24.dp)
                                             )
                                         }
                                     }
                                     
-                                    item.badge?.let { badgeText ->
-                                        Surface(
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(top = 10.dp, end = 10.dp),
-                                            shape = CircleShape,
-                                            color = MaterialTheme.colorScheme.primary
-                                        ) {
-                                            Text(
-                                                text = badgeText,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                            )
-                                        }
+                                    Column {
+                                        Text(
+                                            text = item.title,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = item.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            lineHeight = 15.sp,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                
+                                item.badge?.let { badgeText ->
+                                    Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 10.dp, end = 10.dp),
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary
+                                    ) {
+                                        Text(
+                                            text = badgeText,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
                                     }
                                 }
                             }
-                        }
-                        if (rowItems.size < 2) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Enhance Created PDFs",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 14.dp),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-
-                class EnhanceToolItem(
-                    val title: String,
-                    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-                    val onClick: () -> Unit
-                )
-
-                val enhanceTools = listOf(
-                    EnhanceToolItem(
-                        title = "Add password",
-                        icon = Icons.Default.Lock,
-                        onClick = { Toast.makeText(context, "Add Password feature coming soon!", Toast.LENGTH_SHORT).show() }
-                    ),
-                    EnhanceToolItem(
-                        title = "Remove password",
-                        icon = Icons.Default.LockOpen,
-                        onClick = { Toast.makeText(context, "Remove Password feature coming soon!", Toast.LENGTH_SHORT).show() }
-                    ),
-                    EnhanceToolItem(
-                        title = "Add Text",
-                        icon = Icons.Default.TextFields,
-                        onClick = { Toast.makeText(context, "Add Text feature coming soon!", Toast.LENGTH_SHORT).show() }
-                    ),
-                    EnhanceToolItem(
-                        title = "Rotate Pages",
-                        icon = Icons.Default.CropRotate,
-                        onClick = {
-                            activeTool = EditorTool.ROTATE_PDF
-                            editorFilePickerLauncher.launch(arrayOf("application/pdf"))
-                        }
-                    ),
-                    EnhanceToolItem(
-                        title = "Add Watermark",
-                        icon = Icons.Default.Layers,
-                        onClick = { Toast.makeText(context, "Add Watermark feature coming soon!", Toast.LENGTH_SHORT).show() }
-                    ),
-                    EnhanceToolItem(
-                        title = "Add Images",
-                        icon = Icons.Default.AddBox,
-                        onClick = { Toast.makeText(context, "Add Images feature coming soon!", Toast.LENGTH_SHORT).show() }
-                    )
-                )
-
-                val chunkedEnhance = remember(enhanceTools) { enhanceTools.chunked(3) }
-                chunkedEnhance.forEach { rowItems ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        rowItems.forEach { item ->
-                            Card(
-                                onClick = item.onClick,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(110.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFF2C3243)
-                                )
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Icon(
-                                        imageVector = item.icon,
-                                        contentDescription = item.title,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(32.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = item.title,
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                        fontWeight = FontWeight.Medium,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 2,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        lineHeight = 14.sp
-                                    )
-                                }
-                            }
-                        }
-                        repeat(3 - rowItems.size) {
-                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -1970,6 +2094,325 @@ fun HomeScreen(
                 TextButton(
                     onClick = {
                         showSplitPreviewDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Add Password Dialog
+    if (showAddPasswordDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showAddPasswordDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Text("Add Password Protection", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = originalName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    OutlinedTextField(
+                        value = addPasswordInput,
+                        onValueChange = { addPasswordInput = it },
+                        label = { Text("Password") },
+                        visualTransformation = if (addPasswordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        trailingIcon = {
+                            val image = if (addPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                            IconButton(onClick = { addPasswordVisible = !addPasswordVisible }) {
+                                Icon(imageVector = image, contentDescription = "Toggle password visibility")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (addPasswordInput.isBlank()) {
+                            Toast.makeText(context, "Password cannot be empty", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val baseName = originalName.substringBeforeLast(".")
+                            showAddPasswordDialog = false
+                            saveEditorFileLauncher.launch("${baseName}_protected.pdf")
+                        }
+                    }
+                ) {
+                    Text("Encrypt & Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddPasswordDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Remove Password Dialog
+    if (showRemovePasswordDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showRemovePasswordDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Text("Enter PDF Password", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "This document is encrypted. Enter password to decrypt and save it unprotected.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    OutlinedTextField(
+                        value = removePasswordInput,
+                        onValueChange = { removePasswordInput = it },
+                        label = { Text("Password") },
+                        visualTransformation = if (removePasswordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        trailingIcon = {
+                            val image = if (removePasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                            IconButton(onClick = { removePasswordVisible = !removePasswordVisible }) {
+                                Icon(imageVector = image, contentDescription = "Toggle password visibility")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = removePasswordError != null
+                    )
+                    if (removePasswordError != null) {
+                        Text(
+                            text = removePasswordError ?: "",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isProcessing = true
+                        processingMessage = "Verifying password..."
+                        scope.launch {
+                            val correct = withContext(Dispatchers.IO) {
+                                var isValid = false
+                                try {
+                                    val tempFile = File(context.cacheDir, "temp_verify_${System.currentTimeMillis()}.pdf")
+                                    context.contentResolver.openInputStream(selectedInputUri!!)?.use { input ->
+                                        tempFile.outputStream().use { output ->
+                                            input.copyTo(output)
+                                        }
+                                    }
+                                    try {
+                                        com.tom_roush.pdfbox.pdmodel.PDDocument.load(tempFile, removePasswordInput).close()
+                                        isValid = true
+                                    } catch (e: Exception) {
+                                        isValid = false
+                                    } finally {
+                                        tempFile.delete()
+                                    }
+                                } catch (e: Exception) {
+                                    isValid = false
+                                }
+                                isValid
+                            }
+                            isProcessing = false
+                            if (correct) {
+                                val baseName = originalName.substringBeforeLast(".")
+                                showRemovePasswordDialog = false
+                                saveEditorFileLauncher.launch("${baseName}_decrypted.pdf")
+                            } else {
+                                removePasswordError = "Incorrect password. Please try again."
+                            }
+                        }
+                    }
+                ) {
+                    Text("Decrypt & Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRemovePasswordDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Add Watermark Dialog
+    if (showAddWatermarkDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showAddWatermarkDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Text("Add PDF Watermark", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = originalName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    
+                    OutlinedTextField(
+                        value = watermarkText,
+                        onValueChange = { watermarkText = it },
+                        label = { Text("Watermark Text") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Font Size:", fontWeight = FontWeight.SemiBold)
+                            Text("${watermarkFontSize.toInt()} pt", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Slider(
+                            value = watermarkFontSize,
+                            onValueChange = { watermarkFontSize = it },
+                            valueRange = 12f..96f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Rotation Angle:", fontWeight = FontWeight.SemiBold)
+                            Text("${watermarkRotation.toInt()}°", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Slider(
+                            value = watermarkRotation,
+                            onValueChange = { watermarkRotation = it },
+                            valueRange = -90f..90f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Opacity:", fontWeight = FontWeight.SemiBold)
+                            Text("${(watermarkOpacity * 100).toInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Slider(
+                            value = watermarkOpacity,
+                            onValueChange = { watermarkOpacity = it },
+                            valueRange = 0.1f..1.0f,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("Watermark Color:", fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val colorsList = listOf(
+                                "gray" to ("Gray" to Color.Gray),
+                                "red" to ("Red" to Color.Red),
+                                "blue" to ("Blue" to Color.Blue),
+                                "green" to ("Green" to Color(0xFF2E7D32))
+                            )
+                            colorsList.forEach { (colorId, pair) ->
+                                val (label, displayColor) = pair
+                                val isSelected = watermarkColorStr == colorId
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { watermarkColorStr = colorId }
+                                        .padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .background(displayColor, CircleShape)
+                                                .border(1.dp, Color.White, CircleShape)
+                                        )
+                                        Text(
+                                            text = label,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (watermarkText.isBlank()) {
+                            Toast.makeText(context, "Watermark text cannot be empty", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val baseName = originalName.substringBeforeLast(".")
+                            showAddWatermarkDialog = false
+                            saveEditorFileLauncher.launch("${baseName}_watermarked.pdf")
+                        }
+                    }
+                ) {
+                    Text("Add Watermark")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddWatermarkDialog = false
                         selectedInputUri = null
                     }
                 ) {
@@ -2700,8 +3143,12 @@ enum class EditorTool {
     COMPRESS_PDF,
     ROTATE_PDF,
     ZIP_TO_PDF,
-    IMAGES_TO_PDF
+    IMAGES_TO_PDF,
+    ADD_PASSWORD,
+    REMOVE_PASSWORD,
+    ADD_WATERMARK
 }
+
 
 data class EditorToolItem(
     val tool: EditorTool,
