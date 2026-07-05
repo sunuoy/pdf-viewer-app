@@ -58,6 +58,14 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.CropRotate
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.AddBox
+import androidx.compose.ui.text.style.TextAlign
+
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.LightMode
@@ -1251,6 +1259,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
             ) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1328,103 +1337,208 @@ fun HomeScreen(
                     )
                 )
                 
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(bottom = 16.dp)
-                ) {
-                    items(tools) { item ->
-                        Card(
-                            onClick = {
-                                if (item.tool == EditorTool.MERGE_PDFS) {
-                                    mergePickerLauncher.launch(arrayOf("application/pdf"))
-                                } else if (item.tool == EditorTool.IMAGES_TO_PDF) {
-                                    activeTool = item.tool
-                                    imagePickerLauncher.launch(arrayOf("image/*"))
-                                } else if (item.tool == EditorTool.ZIP_TO_PDF) {
-                                    activeTool = item.tool
-                                    editorFilePickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
-                                } else {
-                                    activeTool = item.tool
-                                    editorFilePickerLauncher.launch(arrayOf("application/pdf"))
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Surface(
-                                        modifier = Modifier.size(46.dp),
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = Color.Transparent
+                val chunkedTools = remember(tools) { tools.chunked(2) }
+                chunkedTools.forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        rowItems.forEach { item ->
+                            Card(
+                                onClick = {
+                                    if (item.tool == EditorTool.MERGE_PDFS) {
+                                        mergePickerLauncher.launch(arrayOf("application/pdf"))
+                                    } else if (item.tool == EditorTool.IMAGES_TO_PDF) {
+                                        activeTool = item.tool
+                                        imagePickerLauncher.launch(arrayOf("image/*"))
+                                    } else if (item.tool == EditorTool.ZIP_TO_PDF) {
+                                        activeTool = item.tool
+                                        editorFilePickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+                                    } else {
+                                        activeTool = item.tool
+                                        editorFilePickerLauncher.launch(arrayOf("application/pdf"))
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(160.dp),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .background(Brush.linearGradient(item.gradientColors)),
-                                            contentAlignment = Alignment.Center
+                                        Surface(
+                                            modifier = Modifier.size(46.dp),
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = Color.Transparent
                                         ) {
-                                            Icon(
-                                                imageVector = item.icon,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(24.dp)
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(Brush.linearGradient(item.gradientColors)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = item.icon,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+                                        
+                                        Column {
+                                            Text(
+                                                text = item.title,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = item.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 2,
+                                                lineHeight = 15.sp,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
                                     }
                                     
-                                    Column {
-                                        Text(
-                                            text = item.title,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = item.description,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 2,
-                                            lineHeight = 15.sp,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                                
-                                item.badge?.let { badgeText ->
-                                    Surface(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .padding(top = 10.dp, end = 10.dp),
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.primary
-                                    ) {
-                                        Text(
-                                            text = badgeText,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                        )
+                                    item.badge?.let { badgeText ->
+                                        Surface(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(top = 10.dp, end = 10.dp),
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.primary
+                                        ) {
+                                            Text(
+                                                text = badgeText,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimary,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
+                        }
+                        if (rowItems.size < 2) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Enhance Created PDFs",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 14.dp),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                class EnhanceToolItem(
+                    val title: String,
+                    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+                    val onClick: () -> Unit
+                )
+
+                val enhanceTools = listOf(
+                    EnhanceToolItem(
+                        title = "Add password",
+                        icon = Icons.Default.Lock,
+                        onClick = { Toast.makeText(context, "Add Password feature coming soon!", Toast.LENGTH_SHORT).show() }
+                    ),
+                    EnhanceToolItem(
+                        title = "Remove password",
+                        icon = Icons.Default.LockOpen,
+                        onClick = { Toast.makeText(context, "Remove Password feature coming soon!", Toast.LENGTH_SHORT).show() }
+                    ),
+                    EnhanceToolItem(
+                        title = "Add Text",
+                        icon = Icons.Default.TextFields,
+                        onClick = { Toast.makeText(context, "Add Text feature coming soon!", Toast.LENGTH_SHORT).show() }
+                    ),
+                    EnhanceToolItem(
+                        title = "Rotate Pages",
+                        icon = Icons.Default.CropRotate,
+                        onClick = {
+                            activeTool = EditorTool.ROTATE_PDF
+                            editorFilePickerLauncher.launch(arrayOf("application/pdf"))
+                        }
+                    ),
+                    EnhanceToolItem(
+                        title = "Add Watermark",
+                        icon = Icons.Default.Layers,
+                        onClick = { Toast.makeText(context, "Add Watermark feature coming soon!", Toast.LENGTH_SHORT).show() }
+                    ),
+                    EnhanceToolItem(
+                        title = "Add Images",
+                        icon = Icons.Default.AddBox,
+                        onClick = { Toast.makeText(context, "Add Images feature coming soon!", Toast.LENGTH_SHORT).show() }
+                    )
+                )
+
+                val chunkedEnhance = remember(enhanceTools) { enhanceTools.chunked(3) }
+                chunkedEnhance.forEach { rowItems ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        rowItems.forEach { item ->
+                            Card(
+                                onClick = item.onClick,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(110.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFF2C3243)
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = item.icon,
+                                        contentDescription = item.title,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = item.title,
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
+                        }
+                        repeat(3 - rowItems.size) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
