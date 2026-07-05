@@ -157,7 +157,6 @@ fun HomeScreen(
 
     // Images to PDF State
     val selectedImageUrisForPdf = remember { mutableStateListOf<Uri>() }
-    var isMenuExpanded by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var autoSaveLocationPrompt by remember { mutableStateOf(true) }
@@ -981,6 +980,7 @@ fun HomeScreen(
                     scope = scope,
                     recentPdfs = recentPdfs,
                     onPdfSelected = onPdfSelected,
+                    onNavigateToSettings = onNavigateToSettings,
                     onCloseDrawer = {
                         scope.launch { drawerState.close() }
                     }
@@ -1031,40 +1031,6 @@ fun HomeScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent
                 ),
-                actions = {
-                    Box {
-                        TooltipIconButton(onClick = { isMenuExpanded = true }, tooltipText = "More Options") {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "More options menu",
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = isMenuExpanded,
-                            onDismissRequest = { isMenuExpanded = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Settings") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    onNavigateToSettings()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
-                            )
-
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Exit") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    (context as? android.app.Activity)?.finish()
-                                },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                            )
-                        }
-                    }
-                }
             )
         },
         bottomBar = {
@@ -2500,6 +2466,7 @@ fun HomeScreenDrawerContent(
     scope: kotlinx.coroutines.CoroutineScope,
     recentPdfs: List<com.pdfsuny.app.data.entities.RecentPdf>,
     onPdfSelected: (String) -> Unit,
+    onNavigateToSettings: () -> Unit,
     onCloseDrawer: () -> Unit
 ) {
     val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
@@ -2761,6 +2728,25 @@ fun HomeScreenDrawerContent(
                 onClick = { launchWithFlag("customize_bar_on_launch") }
             )
         }
+
+        HorizontalDivider(color = Color(0xFF2C273F), modifier = Modifier.padding(vertical = 12.dp))
+
+        DrawerActionItem(
+            icon = Icons.Default.Settings,
+            label = "Settings",
+            onClick = {
+                onCloseDrawer()
+                onNavigateToSettings()
+            }
+        )
+        DrawerActionItem(
+            icon = Icons.AutoMirrored.Filled.ExitToApp,
+            label = "Exit",
+            onClick = {
+                onCloseDrawer()
+                (context as? android.app.Activity)?.finish()
+            }
+        )
     }
 }
 
