@@ -53,6 +53,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -105,6 +107,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CompletableDeferred
 import android.util.LruCache
 import androidx.compose.ui.platform.LocalDensity
 import java.io.File
@@ -151,6 +154,15 @@ fun PdfViewerScreen(
     var textDocumentContent by remember { mutableStateOf<String?>(null) }
     var isComicBook by remember { mutableStateOf(false) }
     var comicPages by remember { mutableStateOf<List<com.pdfsuny.app.services.ComicService.ComicPage>>(emptyList()) }
+    
+    // Password decryption state
+    var unlockedTempFile by remember { mutableStateOf<File?>(null) }
+    var showPasswordPrompt by remember { mutableStateOf(false) }
+    var passwordInput by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var passwordError by remember { mutableStateOf<String?>(null) }
+    var activePasswordDeferred by remember { mutableStateOf<CompletableDeferred<String>?>(null) }
+
     
     // Page dimensions cache (pageIndex -> Pair(width, height))
     val pageSizes = remember { mutableStateMapOf<Int, Pair<Int, Int>>() }
@@ -523,6 +535,11 @@ fun PdfViewerScreen(
             } catch (e: Exception) {
                 // Ignore
             }
+            try {
+                unlockedTempFile?.delete()
+            } catch (e: Exception) {
+                // Ignore
+            }
         }
     }
     
@@ -615,7 +632,69 @@ fun PdfViewerScreen(
                     } catch (e: Exception) {
                         // Ignore
                     }
-                    val pfd = if (uri.scheme == "file") {
+                    
+                    // Check if PDF is encrypted/password protected
+                    var isEncrypted = false
+                    try {
+                        val tempCheckFile = File(context.cacheDir, "temp_view_check_${System.currentTimeMillis()}.pdf")
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            tempCheckFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        try {
+                            com.tom_roush.pdfbox.pdmodel.PDDocument.load(tempCheckFile).close()
+                        } catch (e: Exception) {
+                            if (e.javaClass.simpleName == "InvalidPasswordException" || 
+                                e.message?.contains("password", ignoreCase = true) == true || 
+                                e.message?.contains("encrypted", ignoreCase = true) == true) {
+                                isEncrypted = true
+                            }
+                        } finally {
+                            tempCheckFile.delete()
+                        }
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
+
+                    if (isEncrypted) {
+                        var success = false
+                        while (!success) {
+                            val deferred = CompletableDeferred<String>()
+                            activePasswordDeferred = deferred
+                            showPasswordPrompt = true
+                            val enteredPassword = deferred.await()
+                            
+                            if (enteredPassword == "__CANCEL_PDF_VIEW__") {
+                                withContext(Dispatchers.Main) {
+                                    onBack()
+                                }
+                                return@withContext
+                            }
+                            
+                            try {
+                                val tempDecrypted = File(context.cacheDir, "unlocked_${System.currentTimeMillis()}.pdf")
+                                context.contentResolver.openInputStream(uri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input, enteredPassword)
+                                    document.setAllSecurityToBeRemoved(true)
+                                    tempDecrypted.outputStream().use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
+                                }
+                                unlockedTempFile = tempDecrypted
+                                success = true
+                                showPasswordPrompt = false
+                                passwordError = null
+                            } catch (e: Exception) {
+                                passwordError = "Incorrect password. Please try again."
+                            }
+                        }
+                    }
+
+                    val pfd = if (unlockedTempFile != null) {
+                        ParcelFileDescriptor.open(unlockedTempFile, ParcelFileDescriptor.MODE_READ_ONLY)
+                    } else if (uri.scheme == "file") {
                         ParcelFileDescriptor.open(File(uri.path ?: ""), ParcelFileDescriptor.MODE_READ_ONLY)
                     } else {
                         context.contentResolver.openFileDescriptor(uri, "r")
@@ -907,6 +986,73 @@ fun PdfViewerScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        if (showPasswordPrompt) {
+            AlertDialog(
+                onDismissRequest = {
+                    showPasswordPrompt = false
+                    activePasswordDeferred?.complete("__CANCEL_PDF_VIEW__")
+                },
+                title = {
+                    Text("Password Protected PDF", fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "This document is encrypted. Please enter the password to view it.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        OutlinedTextField(
+                            value = passwordInput,
+                            onValueChange = { passwordInput = it },
+                            label = { Text("Password") },
+                            visualTransformation = if (passwordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            trailingIcon = {
+                                val image = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
+                                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                    Icon(imageVector = image, contentDescription = "Toggle password visibility")
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            isError = passwordError != null
+                        )
+                        if (passwordError != null) {
+                            Text(
+                                text = passwordError ?: "",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (passwordInput.isBlank()) {
+                                Toast.makeText(context, "Password cannot be empty", Toast.LENGTH_SHORT).show()
+                            } else {
+                                activePasswordDeferred?.complete(passwordInput)
+                            }
+                        }
+                    ) {
+                        Text("Unlock")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showPasswordPrompt = false
+                            activePasswordDeferred?.complete("__CANCEL_PDF_VIEW__")
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
         Scaffold(
         topBar = {
             TopAppBar(
