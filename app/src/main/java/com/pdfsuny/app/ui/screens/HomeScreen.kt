@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -44,6 +45,25 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.BorderColor
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -138,31 +158,10 @@ fun HomeScreen(
     // Images to PDF State
     val selectedImageUrisForPdf = remember { mutableStateListOf<Uri>() }
     var isMenuExpanded by remember { mutableStateOf(false) }
-    var isGoogleDriveConnected by remember { mutableStateOf(com.pdfsuny.app.services.GoogleDriveManager.isLoggedIn(context)) }
-    var googleDriveEmail by remember { mutableStateOf(com.pdfsuny.app.services.GoogleDriveManager.getEmail(context)) }
-    var showSignInDialog by remember { mutableStateOf(false) }
-    var inputEmail by remember { mutableStateOf("younus@gmail.com") }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var autoSaveLocationPrompt by remember { mutableStateOf(true) }
     var highResRendering by remember { mutableStateOf(true) }
-    var cloudFiles by remember { mutableStateOf<List<com.pdfsuny.app.data.entities.CloudFile>>(emptyList()) }
-    var isCloudLoading by remember { mutableStateOf(false) }
-
-    LaunchedEffect(currentTab) {
-        if (currentTab == HomeTab.CLOUD_DRIVE) {
-            isCloudLoading = true
-            val unifiedList = mutableListOf<com.pdfsuny.app.data.entities.CloudFile>()
-            com.pdfsuny.app.services.GoogleDriveManager.getPdfFiles { gFiles ->
-                unifiedList.addAll(gFiles)
-                com.pdfsuny.app.services.OneDriveManager.getPdfFiles { oFiles ->
-                    unifiedList.addAll(oFiles)
-                    cloudFiles = unifiedList
-                    isCloudLoading = false
-                }
-            }
-        }
-    }
     
     // Initialize PDFBox asynchronously to optimize cold startup speed
     val pdfTextService = remember { PdfTextService() }
@@ -968,16 +967,52 @@ fun HomeScreen(
         }
     }
     
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = {
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = Color(0xFF161320),
+                modifier = Modifier.width(320.dp)
+            ) {
+                HomeScreenDrawerContent(
+                    context = context,
+                    scope = scope,
+                    recentPdfs = recentPdfs,
+                    onPdfSelected = onPdfSelected,
+                    onCloseDrawer = {
+                        scope.launch { drawerState.close() }
+                    }
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            modifier = modifier,
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        TooltipIconButton(
+                            onClick = {
+                                scope.launch {
+                                    drawerState.open()
+                                }
+                            },
+                            tooltipText = "Settings Menu"
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Open Settings",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    },
+                    title = {
                     Column {
                         Text(
                             text = when (currentTab) {
                                 HomeTab.RECENTS -> "PDF Reader"
-                                HomeTab.CLOUD_DRIVE -> "Cloud File Manager"
                                 HomeTab.EDITOR -> "PDF Document Editor"
                             },
                             fontWeight = FontWeight.Bold,
@@ -986,7 +1021,6 @@ fun HomeScreen(
                         Text(
                             text = when (currentTab) {
                                 HomeTab.RECENTS -> "Your offline document workspace"
-                                HomeTab.CLOUD_DRIVE -> "Unified Google Drive & OneDrive PDF library"
                                 HomeTab.EDITOR -> "Convert and export your files"
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -1019,26 +1053,6 @@ fun HomeScreen(
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
                             )
 
-                            DropdownMenuItem(
-                                text = { Text("Google Drive Sync") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    currentTab = HomeTab.CLOUD_DRIVE
-                                    if (!isGoogleDriveConnected) {
-                                        showSignInDialog = true
-                                    }
-                                },
-                                leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("OneDrive Cloud Sync") },
-                                onClick = {
-                                    isMenuExpanded = false
-                                    com.pdfsuny.app.services.OneDriveManager.startSignIn(context)
-                                },
-                                leadingIcon = { Icon(Icons.Default.CloudSync, contentDescription = null) }
-                            )
-
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Exit") },
@@ -1061,12 +1075,7 @@ fun HomeScreen(
                     icon = { Icon(Icons.Default.History, contentDescription = "Recents") },
                     label = { Text("Recents") }
                 )
-                NavigationBarItem(
-                    selected = currentTab == HomeTab.CLOUD_DRIVE,
-                    onClick = { currentTab = HomeTab.CLOUD_DRIVE },
-                    icon = { Icon(Icons.Default.CloudSync, contentDescription = "Cloud Drive") },
-                    label = { Text("Cloud Drive") }
-                )
+
                 NavigationBarItem(
                     selected = currentTab == HomeTab.EDITOR,
                     onClick = { currentTab = HomeTab.EDITOR },
@@ -1241,251 +1250,6 @@ fun HomeScreen(
                                         database.recentPdfDao().deleteRecentPdf(pdf)
                                     }
                                 }
-                            )
-                        }
-                    }
-                }
-            }
-        } else if (currentTab == HomeTab.CLOUD_DRIVE) {
-            // Sign In Dialog
-            if (showSignInDialog) {
-                AlertDialog(
-                    onDismissRequest = { showSignInDialog = false },
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CloudSync,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Google Sign-In", style = MaterialTheme.typography.titleLarge)
-                        }
-                    },
-                    text = {
-                        Column {
-                            Text(
-                                "Connect to Google Drive to access and view your cloud PDF files directly inside the app.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.padding(bottom = 16.dp)
-                            )
-                            OutlinedTextField(
-                                value = inputEmail,
-                                onValueChange = { inputEmail = it },
-                                label = { Text("Email Address") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                if (inputEmail.isNotBlank()) {
-                                    com.pdfsuny.app.services.GoogleDriveManager.signIn(context, inputEmail)
-                                    isGoogleDriveConnected = true
-                                    googleDriveEmail = inputEmail
-                                    showSignInDialog = false
-                                    Toast.makeText(context, "Successfully signed in to Google Drive!", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        ) {
-                            Text("Sign In")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showSignInDialog = false }) {
-                            Text("Cancel")
-                        }
-                    }
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp)
-            ) {
-                Text(
-                    text = "Connected Cloud Documents",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-
-                // Connection status card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isGoogleDriveConnected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.CloudSync,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "Google Drive Sync",
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.bodyLarge
-                                    )
-                                    Text(
-                                        text = if (isGoogleDriveConnected) "Connected: $googleDriveEmail" else "Sign in to access your Google Drive",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                }
-                            }
-                            Button(
-                                onClick = {
-                                    if (isGoogleDriveConnected) {
-                                        com.pdfsuny.app.services.GoogleDriveManager.signOut(context)
-                                        isGoogleDriveConnected = false
-                                    } else {
-                                        showSignInDialog = true
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isGoogleDriveConnected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                )
-                            ) {
-                                Text(if (isGoogleDriveConnected) "Sign Out" else "Connect")
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (isGoogleDriveConnected) {
-                    var driveFiles by remember { mutableStateOf<List<com.pdfsuny.app.data.entities.CloudFile>>(emptyList()) }
-                    LaunchedEffect(Unit) {
-                        com.pdfsuny.app.services.GoogleDriveManager.getPdfFiles { list ->
-                            driveFiles = list
-                        }
-                    }
-
-                    if (driveFiles.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No files found in Google Drive.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
-                        }
-                    } else {
-                        Text(
-                            text = "Google Drive Files",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(bottom = 16.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            items(driveFiles) { file ->
-                                Card(
-                                    onClick = {
-                                        // Download/copy Drive file locally and open it in the PDF Viewer app
-                                        scope.launch {
-                                            isProcessing = true
-                                            processingMessage = "Fetching ${file.name} from Google Drive..."
-                                            val localFile = withContext(Dispatchers.IO) {
-                                                com.pdfsuny.app.services.GoogleDriveManager.getDriveFile(context, file.id)
-                                            }
-                                            isProcessing = false
-                                            if (localFile != null && localFile.exists()) {
-                                                val uriString = Uri.fromFile(localFile).toString()
-                                                val existing = database.recentPdfDao().getRecentPdfByPath(uriString)
-                                                val recentPdf = RecentPdf(
-                                                    id = existing?.id ?: 0,
-                                                    name = localFile.name,
-                                                    path = uriString,
-                                                    lastOpened = System.currentTimeMillis(),
-                                                    lastPage = existing?.lastPage ?: 0
-                                                )
-                                                database.recentPdfDao().insertRecentPdf(recentPdf)
-                                                onPdfSelected(uriString)
-                                            } else {
-                                                Toast.makeText(context, "Failed to download file", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    elevation = CardDefaults.cardElevation(2.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.PictureAsPdf,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(40.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(16.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(file.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = MaterialTheme.colorScheme.primaryContainer
-                                                ) {
-                                                    Text(
-                                                        text = "Google Drive",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(file.getFormattedSize(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.CloudDownload,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                                modifier = Modifier.size(64.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Sign in to view your Google Drive documents",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.secondary
                             )
                         }
                     }
@@ -2549,6 +2313,7 @@ fun HomeScreen(
         )
     }
 }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -2704,7 +2469,6 @@ private fun shareUri(context: Context, uri: Uri, mimeType: String) {
 
 enum class HomeTab {
     RECENTS,
-    CLOUD_DRIVE,
     EDITOR
 }
 
@@ -2728,3 +2492,303 @@ data class EditorToolItem(
     val gradientColors: List<Color>,
     val badge: String? = null
 )
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun HomeScreenDrawerContent(
+    context: Context,
+    scope: kotlinx.coroutines.CoroutineScope,
+    recentPdfs: List<com.pdfsuny.app.data.entities.RecentPdf>,
+    onPdfSelected: (String) -> Unit,
+    onCloseDrawer: () -> Unit
+) {
+    val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+    
+    var isPdfOptionsExpanded by remember { mutableStateOf(true) }
+    var isControlOptionsExpanded by remember { mutableStateOf(true) }
+    var isMiscOptionsExpanded by remember { mutableStateOf(true) }
+    
+    var pageColorType by remember { mutableStateOf(sharedPrefs.getString("reader_page_color_type", "original") ?: "original") }
+    var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
+    var isDarkThemeInverted by remember { mutableStateOf(sharedPrefs.getBoolean("night_mode_default", false)) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF161320)) // Dark aesthetic background
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // Title block
+        Text(
+            text = "Settings & Options",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        
+        HorizontalDivider(color = Color(0xFF2C273F), modifier = Modifier.padding(bottom = 8.dp))
+        
+        // Helper function for quick recent launching with an action flag
+        fun launchWithFlag(flagKey: String) {
+            if (recentPdfs.isNotEmpty()) {
+                sharedPrefs.edit().putBoolean(flagKey, true).apply()
+                val targetPath = recentPdfs.first().path
+                onCloseDrawer()
+                onPdfSelected(targetPath)
+                Toast.makeText(context, "Opening recent: ${recentPdfs.first().name}", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Please open a PDF file from the Home workspace first.", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        // --- PDF & Document Options ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { isPdfOptionsExpanded = !isPdfOptionsExpanded }
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "PDF & Document Options",
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF9E92FF),
+                fontSize = 14.sp
+            )
+            Icon(
+                imageVector = if (isPdfOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = Color(0xFF9E92FF),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        
+        if (isPdfOptionsExpanded) {
+            DrawerActionItem(
+                icon = Icons.Default.Bookmarks,
+                label = "Open Bookmarks",
+                onClick = { launchWithFlag("open_bookmarks_on_launch") }
+            )
+            DrawerActionItem(
+                icon = Icons.Default.BorderColor,
+                label = "Text Highlights",
+                onClick = { launchWithFlag("open_highlights_on_launch") }
+            )
+            DrawerActionItem(
+                icon = Icons.Default.Edit,
+                label = "Edit PDF Text",
+                onClick = { launchWithFlag("open_word_editor_on_launch") }
+            )
+            DrawerActionItem(
+                icon = Icons.Default.EditNote,
+                label = "Edit Page / Document",
+                onClick = { launchWithFlag("open_editor_on_launch") }
+            )
+            DrawerActionItem(
+                icon = Icons.Default.Share,
+                label = "Share PDF",
+                onClick = { launchWithFlag("share_on_launch") }
+            )
+        }
+        
+        HorizontalDivider(color = Color(0xFF2C273F), modifier = Modifier.padding(vertical = 8.dp))
+
+        // --- Control Options ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { isControlOptionsExpanded = !isControlOptionsExpanded }
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "Control Options",
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF9E92FF),
+                fontSize = 14.sp
+            )
+            Icon(
+                imageVector = if (isControlOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = Color(0xFF9E92FF),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        
+        if (isControlOptionsExpanded) {
+            DrawerActionItem(
+                icon = Icons.Default.PlayArrow,
+                label = "Start Auto Scroll",
+                onClick = { launchWithFlag("auto_scroll_on_launch") }
+            )
+            DrawerActionItem(
+                icon = if (isVerticalScroll) Icons.Default.SwapHoriz else Icons.Default.SwapVert,
+                label = if (isVerticalScroll) "Switch to Horizontal" else "Switch to Vertical",
+                onClick = {
+                    isVerticalScroll = !isVerticalScroll
+                    sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
+                    Toast.makeText(context, "Scroll direction updated.", Toast.LENGTH_SHORT).show()
+                }
+            )
+            DrawerActionItem(
+                icon = Icons.AutoMirrored.Filled.VolumeUp,
+                label = "Start TTS Reading",
+                onClick = { launchWithFlag("tts_on_launch") }
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            // Page Color
+            Text(
+                text = "Page Color:",
+                color = Color.White,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val pageColors = listOf(
+                    "original" to ("Original" to Color.White),
+                    "sepia" to ("Sepia" to Color(0xFFF4ECD8)),
+                    "mint" to ("Mint" to Color(0xFFE8F5E9)),
+                    "warm" to ("Warm" to Color(0xFFFDF2E9))
+                )
+                pageColors.forEach { (colorId, pair) ->
+                    val (label, displayColor) = pair
+                    val isSelected = pageColorType == colorId
+                    
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSelected) Color(0xFF8B7CF8) else Color(0xFF2C273F))
+                            .clickable {
+                                pageColorType = colorId
+                                sharedPrefs.edit().putString("reader_page_color_type", colorId).apply()
+                                Toast.makeText(context, "Page color set to $label.", Toast.LENGTH_SHORT).show()
+                            }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clip(CircleShape)
+                                    .background(displayColor)
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) Color.White else Color.Gray,
+                                        shape = CircleShape
+                                    )
+                            )
+                            Text(
+                                text = label,
+                                color = if (isSelected) Color.White else Color(0xFFC5C0DB),
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        
+        HorizontalDivider(color = Color(0xFF2C273F), modifier = Modifier.padding(vertical = 12.dp))
+
+        // --- Misc Options ---
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { isMiscOptionsExpanded = !isMiscOptionsExpanded }
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "Misc Options",
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF9E92FF),
+                fontSize = 14.sp
+            )
+            Icon(
+                imageVector = if (isMiscOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = Color(0xFF9E92FF),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        
+        if (isMiscOptionsExpanded) {
+            DrawerActionItem(
+                icon = if (isDarkThemeInverted) Icons.Default.LightMode else Icons.Default.DarkMode,
+                label = "Dark Theme Inversion",
+                onClick = {
+                    isDarkThemeInverted = !isDarkThemeInverted
+                    sharedPrefs.edit().putBoolean("night_mode_default", isDarkThemeInverted).apply()
+                    Toast.makeText(context, "Dark Theme Inversion toggle updated.", Toast.LENGTH_SHORT).show()
+                }
+            )
+            DrawerActionItem(
+                icon = Icons.Default.Translate,
+                label = "Translation Settings",
+                onClick = { launchWithFlag("translation_on_launch") }
+            )
+            DrawerActionItem(
+                icon = Icons.Default.Settings,
+                label = "Offline Translation Models",
+                onClick = { launchWithFlag("models_on_launch") }
+            )
+            DrawerActionItem(
+                icon = Icons.Default.Tune,
+                label = "Ruler Settings",
+                onClick = { launchWithFlag("ruler_on_launch") }
+            )
+            DrawerActionItem(
+                icon = Icons.Default.Build,
+                label = "Customize Reader Bar",
+                onClick = { launchWithFlag("customize_bar_on_launch") }
+            )
+        }
+    }
+}
+
+@Composable
+fun DrawerActionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color(0xFFC5C0DB),
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 14.sp
+        )
+    }
+}

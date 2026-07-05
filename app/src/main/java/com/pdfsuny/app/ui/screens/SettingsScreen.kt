@@ -35,7 +35,6 @@ fun SettingsScreen(
 
     var autoSaveLocationPrompt by remember { mutableStateOf(sharedPrefs.getBoolean("auto_save_location_prompt", true)) }
     var highResRendering by remember { mutableStateOf(sharedPrefs.getBoolean("high_res_rendering", true)) }
-    var autoSyncCloud by remember { mutableStateOf(sharedPrefs.getBoolean("auto_sync_cloud", false)) }
     var nightModeDefault by remember { mutableStateOf(sharedPrefs.getBoolean("night_mode_default", false)) }
     var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
 
@@ -169,24 +168,6 @@ fun SettingsScreen(
                             onCheckedChange = { 
                                 autoSaveLocationPrompt = it
                                 sharedPrefs.edit().putBoolean("auto_save_location_prompt", it).apply()
-                            }
-                        )
-                    }
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Automatic Cloud Sync", fontWeight = FontWeight.SemiBold)
-                            Text("Background sync with Google Drive & OneDrive when connected to Wi-Fi", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-                        }
-                        Switch(
-                            checked = autoSyncCloud,
-                            onCheckedChange = { 
-                                autoSyncCloud = it
-                                sharedPrefs.edit().putBoolean("auto_sync_cloud", it).apply()
                             }
                         )
                     }

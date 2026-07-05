@@ -253,7 +253,10 @@ fun PdfViewerScreen(
     var isBlueLightFilterEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("is_bluelight_filter_enabled", false)) }
     var blueLightOpacity by remember { mutableStateOf(sharedPrefs.getFloat("bluelight_opacity", 0.3f)) }
     val isScreenDimmed = !isAutoBrightness || isBlueLightFilterEnabled
-    var isDarkThemeInverted by remember { mutableStateOf(false) }
+    var isDarkThemeInverted by remember { mutableStateOf(sharedPrefs.getBoolean("night_mode_default", false)) }
+    LaunchedEffect(isDarkThemeInverted) {
+        sharedPrefs.edit().putBoolean("night_mode_default", isDarkThemeInverted).apply()
+    }
     var pageColorType by remember { mutableStateOf(sharedPrefs.getString("reader_page_color_type", "original") ?: "original") }
     var isSearchActive by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
@@ -828,6 +831,77 @@ fun PdfViewerScreen(
         ))
     }
     
+    LaunchedEffect(pageCount) {
+        if (pageCount > 0) {
+            if (sharedPrefs.getBoolean("open_bookmarks_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("open_bookmarks_on_launch", false).apply()
+                onNavigateToBookmarks(currentPageIndex)
+            }
+            if (sharedPrefs.getBoolean("open_highlights_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("open_highlights_on_launch", false).apply()
+                isHighlightManagerOpen = true
+            }
+            if (sharedPrefs.getBoolean("open_word_editor_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("open_word_editor_on_launch", false).apply()
+                if (!isTextDocument && !isComicBook) {
+                    isPdfWordEditorOpen = true
+                }
+            }
+            if (sharedPrefs.getBoolean("open_editor_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("open_editor_on_launch", false).apply()
+                if (!isComicBook) {
+                    isEditorLoading = true
+                    try {
+                        if (isTextDocument) {
+                            editorContent = textDocumentContent ?: ""
+                            isEditorActive = true
+                        } else {
+                            val pageText = pdfTextService.extractTextFromPage(context, Uri.parse(pdfPath), currentPageIndex)
+                            editorContent = pageText
+                            isEditorActive = true
+                        }
+                    } catch (e: Exception) {
+                        Log.e("PdfViewerScreen", "Failed to extract page text for launch editor", e)
+                    } finally {
+                        isEditorLoading = false
+                    }
+                }
+            }
+            if (sharedPrefs.getBoolean("share_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("share_on_launch", false).apply()
+                sharePdf(context, Uri.parse(pdfPath))
+            }
+            if (sharedPrefs.getBoolean("auto_scroll_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("auto_scroll_on_launch", false).apply()
+                isAutoScrollActive = true
+            }
+            if (sharedPrefs.getBoolean("tts_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("tts_on_launch", false).apply()
+                if (!isComicBook) {
+                    startTtsForPage(currentPageIndex)
+                }
+            }
+            if (sharedPrefs.getBoolean("ruler_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("ruler_on_launch", false).apply()
+                isReadingRulerEnabled = true
+                sharedPrefs.edit().putBoolean("is_reading_ruler_enabled", true).apply()
+            }
+            if (sharedPrefs.getBoolean("customize_bar_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("customize_bar_on_launch", false).apply()
+                isCustomizeReaderBarDialogOpen = true
+            }
+            if (sharedPrefs.getBoolean("translation_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("translation_on_launch", false).apply()
+                isTranslationBarActive = true
+            }
+            if (sharedPrefs.getBoolean("models_on_launch", false)) {
+                sharedPrefs.edit().putBoolean("models_on_launch", false).apply()
+                refreshDownloadedModels()
+                isModelManagerOpen = true
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
         topBar = {
