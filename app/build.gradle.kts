@@ -6,10 +6,10 @@ plugins {
 }
 
 android {
-    namespace = "com.pdfview.sunuy"
+    namespace = "com.pdfsuny.app"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.pdfview.sunuy"
+        applicationId = "com.pdfsuny.app"
         minSdk = 24
         targetSdk = 36
         versionCode = 39
