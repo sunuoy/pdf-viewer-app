@@ -1150,8 +1150,9 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "Open PDF File",
+                                    text = "Open File",
                                     style = MaterialTheme.typography.titleLarge,
+
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )

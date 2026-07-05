@@ -40,6 +40,8 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.positionChanged
 import kotlin.math.abs
+import kotlin.math.roundToInt
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -2004,7 +2006,7 @@ fun PdfViewerScreen(
                     else {
                         val itemSize = firstVisibleItemInfo?.size ?: 1
                         val progress = firstVisibleOffset.toFloat() / itemSize.toFloat()
-                        ((firstVisibleItem.toFloat() + progress) / totalItems.toFloat()).coerceIn(0f, 1f)
+                        ((firstVisibleItem.toFloat() + progress) / (totalItems - 1).toFloat()).coerceIn(0f, 1f)
                     }
                 }
 
@@ -2043,7 +2045,7 @@ fun PdfViewerScreen(
                             .pointerInput(totalItems) {
                                 detectTapGestures { offset ->
                                     val fraction = (offset.y / trackHeight).coerceIn(0f, 1f)
-                                    val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                    val targetIndex = (fraction * (totalItems - 1)).roundToInt().coerceIn(0, totalItems - 1)
                                     scope.launch {
                                         listState.scrollToItem(targetIndex)
                                     }
@@ -2057,7 +2059,7 @@ fun PdfViewerScreen(
                                     onDrag = { change, _ ->
                                         change.consume()
                                         val fraction = (change.position.y / trackHeight).coerceIn(0f, 1f)
-                                        val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                        val targetIndex = (fraction * (totalItems - 1)).roundToInt().coerceIn(0, totalItems - 1)
                                         scope.launch {
                                             listState.scrollToItem(targetIndex)
                                         }
@@ -2097,7 +2099,7 @@ fun PdfViewerScreen(
                             .pointerInput(totalItems) {
                                 detectTapGestures { offset ->
                                     val fraction = (offset.x / trackWidth).coerceIn(0f, 1f)
-                                    val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                    val targetIndex = (fraction * (totalItems - 1)).roundToInt().coerceIn(0, totalItems - 1)
                                     scope.launch {
                                         listState.scrollToItem(targetIndex)
                                     }
@@ -2111,7 +2113,7 @@ fun PdfViewerScreen(
                                     onDrag = { change, _ ->
                                         change.consume()
                                         val fraction = (change.position.x / trackWidth).coerceIn(0f, 1f)
-                                        val targetIndex = (fraction * totalItems).toInt().coerceIn(0, totalItems - 1)
+                                        val targetIndex = (fraction * (totalItems - 1)).roundToInt().coerceIn(0, totalItems - 1)
                                         scope.launch {
                                             listState.scrollToItem(targetIndex)
                                         }
