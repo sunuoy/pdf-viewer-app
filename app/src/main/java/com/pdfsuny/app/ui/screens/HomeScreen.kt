@@ -107,6 +107,10 @@ import androidx.compose.material3.FilterChip
 fun HomeScreen(
     onPdfSelected: (String) -> Unit,
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToControlOptions: () -> Unit = {},
+    onNavigateToMiscOptions: () -> Unit = {},
+    onNavigateToDocumentsOptions: () -> Unit = {},
+    onNavigateToPdfOptions: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -997,6 +1001,10 @@ fun HomeScreen(
                     recentPdfs = recentPdfs,
                     onPdfSelected = onPdfSelected,
                     onNavigateToSettings = onNavigateToSettings,
+                    onNavigateToControlOptions = onNavigateToControlOptions,
+                    onNavigateToMiscOptions = onNavigateToMiscOptions,
+                    onNavigateToDocumentsOptions = onNavigateToDocumentsOptions,
+                    onNavigateToPdfOptions = onNavigateToPdfOptions,
                     onCloseDrawer = {
                         scope.launch { drawerState.close() }
                     }
@@ -2597,18 +2605,14 @@ fun HomeScreenDrawerContent(
     recentPdfs: List<com.pdfsuny.app.data.entities.RecentPdf>,
     onPdfSelected: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToControlOptions: () -> Unit,
+    onNavigateToMiscOptions: () -> Unit,
+    onNavigateToDocumentsOptions: () -> Unit,
+    onNavigateToPdfOptions: () -> Unit,
     onCloseDrawer: () -> Unit
 ) {
     val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
     
-    var isPdfOptionsExpanded by remember { mutableStateOf(false) }
-    var isControlOptionsExpanded by remember { mutableStateOf(false) }
-    var isMiscOptionsExpanded by remember { mutableStateOf(false) }
-    
-    var pageColorType by remember { mutableStateOf(sharedPrefs.getString("reader_page_color_type", "original") ?: "original") }
-    var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
-    var isDarkThemeInverted by remember { mutableStateOf(sharedPrefs.getBoolean("night_mode_default", false)) }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2640,224 +2644,50 @@ fun HomeScreenDrawerContent(
             }
         }
 
-        // --- PDF & Document Options ---
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { isPdfOptionsExpanded = !isPdfOptionsExpanded }
-                .padding(vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "PDF & Document Options",
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF9E92FF),
-                fontSize = 14.sp
-            )
-            Icon(
-                imageVector = if (isPdfOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null,
-                tint = Color(0xFF9E92FF),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        
-        if (isPdfOptionsExpanded) {
-            DrawerActionItem(
-                icon = Icons.Default.Bookmarks,
-                label = "Open Bookmarks",
-                onClick = { launchWithFlag("open_bookmarks_on_launch") }
-            )
-            DrawerActionItem(
-                icon = Icons.Default.BorderColor,
-                label = "Text Highlights",
-                onClick = { launchWithFlag("open_highlights_on_launch") }
-            )
-            DrawerActionItem(
-                icon = Icons.Default.Edit,
-                label = "Edit PDF Text",
-                onClick = { launchWithFlag("open_word_editor_on_launch") }
-            )
-            DrawerActionItem(
-                icon = Icons.Default.EditNote,
-                label = "Edit Page / Document",
-                onClick = { launchWithFlag("open_editor_on_launch") }
-            )
-            DrawerActionItem(
-                icon = Icons.Default.Share,
-                label = "Share PDF",
-                onClick = { launchWithFlag("share_on_launch") }
-            )
-        }
-        
-        HorizontalDivider(color = Color(0xFF2C273F), modifier = Modifier.padding(vertical = 8.dp))
-
-        // --- Control Options ---
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { isControlOptionsExpanded = !isControlOptionsExpanded }
-                .padding(vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "Control Options",
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF9E92FF),
-                fontSize = 14.sp
-            )
-            Icon(
-                imageVector = if (isControlOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null,
-                tint = Color(0xFF9E92FF),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        
-        if (isControlOptionsExpanded) {
-            DrawerActionItem(
-                icon = Icons.Default.PlayArrow,
-                label = "Start Auto Scroll",
-                onClick = { launchWithFlag("auto_scroll_on_launch") }
-            )
-            DrawerActionItem(
-                icon = if (isVerticalScroll) Icons.Default.SwapHoriz else Icons.Default.SwapVert,
-                label = if (isVerticalScroll) "Switch to Horizontal" else "Switch to Vertical",
-                onClick = {
-                    isVerticalScroll = !isVerticalScroll
-                    sharedPrefs.edit().putBoolean("is_vertical_scroll", isVerticalScroll).apply()
-                    Toast.makeText(context, "Scroll direction updated.", Toast.LENGTH_SHORT).show()
-                }
-            )
-            DrawerActionItem(
-                icon = Icons.AutoMirrored.Filled.VolumeUp,
-                label = "Start TTS Reading",
-                onClick = { launchWithFlag("tts_on_launch") }
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Page Color
-            Text(
-                text = "Page Color:",
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val pageColors = listOf(
-                    "original" to ("Original" to Color.White),
-                    "sepia" to ("Sepia" to Color(0xFFF4ECD8)),
-                    "mint" to ("Mint" to Color(0xFFE8F5E9)),
-                    "warm" to ("Warm" to Color(0xFFFDF2E9))
-                )
-                pageColors.forEach { (colorId, pair) ->
-                    val (label, displayColor) = pair
-                    val isSelected = pageColorType == colorId
-                    
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) Color(0xFF8B7CF8) else Color(0xFF2C273F))
-                            .clickable {
-                                pageColorType = colorId
-                                sharedPrefs.edit().putString("reader_page_color_type", colorId).apply()
-                                Toast.makeText(context, "Page color set to $label.", Toast.LENGTH_SHORT).show()
-                            }
-                            .padding(vertical = 6.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(14.dp)
-                                    .clip(CircleShape)
-                                    .background(displayColor)
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isSelected) Color.White else Color.Gray,
-                                        shape = CircleShape
-                                    )
-                            )
-                            Text(
-                                text = label,
-                                color = if (isSelected) Color.White else Color(0xFFC5C0DB),
-                                fontSize = 10.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    }
-                }
+        // --- Top-Level Option Buttons ---
+        DrawerActionItem(
+            icon = Icons.Default.Description,
+            label = "Documents Options",
+            onClick = {
+                onCloseDrawer()
+                onNavigateToDocumentsOptions()
             }
-        }
-        
-        HorizontalDivider(color = Color(0xFF2C273F), modifier = Modifier.padding(vertical = 12.dp))
+        )
 
-        // --- Misc Options ---
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { isMiscOptionsExpanded = !isMiscOptionsExpanded }
-                .padding(vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "Misc Options",
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF9E92FF),
-                fontSize = 14.sp
-            )
-            Icon(
-                imageVector = if (isMiscOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null,
-                tint = Color(0xFF9E92FF),
-                modifier = Modifier.size(20.dp)
-            )
-        }
-        
-        if (isMiscOptionsExpanded) {
-            DrawerActionItem(
-                icon = if (isDarkThemeInverted) Icons.Default.LightMode else Icons.Default.DarkMode,
-                label = "Dark Theme Inversion",
-                onClick = {
-                    isDarkThemeInverted = !isDarkThemeInverted
-                    sharedPrefs.edit().putBoolean("night_mode_default", isDarkThemeInverted).apply()
-                    Toast.makeText(context, "Dark Theme Inversion toggle updated.", Toast.LENGTH_SHORT).show()
-                }
-            )
-            DrawerActionItem(
-                icon = Icons.Default.Translate,
-                label = "Translation Settings",
-                onClick = { launchWithFlag("translation_on_launch") }
-            )
-            DrawerActionItem(
-                icon = Icons.Default.Settings,
-                label = "Offline Translation Models",
-                onClick = { launchWithFlag("models_on_launch") }
-            )
-            DrawerActionItem(
-                icon = Icons.Default.Tune,
-                label = "Ruler Settings",
-                onClick = { launchWithFlag("ruler_on_launch") }
-            )
-            DrawerActionItem(
-                icon = Icons.Default.Build,
-                label = "Customize Reader Bar",
-                onClick = { launchWithFlag("customize_bar_on_launch") }
-            )
-        }
+        DrawerActionItem(
+            icon = Icons.Default.PictureAsPdf,
+            label = "PDF Options",
+            onClick = {
+                onCloseDrawer()
+                onNavigateToPdfOptions()
+            }
+        )
+
+        DrawerActionItem(
+            icon = Icons.Default.Tune,
+            label = "Control Options",
+            onClick = {
+                onCloseDrawer()
+                onNavigateToControlOptions()
+            }
+        )
+
+        DrawerActionItem(
+            icon = Icons.Default.Settings,
+            label = "Misc Options",
+            onClick = {
+                onCloseDrawer()
+                onNavigateToMiscOptions()
+            }
+        )
+
+        DrawerActionItem(
+            icon = Icons.Default.Build,
+            label = "Customize Reader Bar",
+            onClick = {
+                launchWithFlag("customize_bar_on_launch")
+            }
+        )
 
         HorizontalDivider(color = Color(0xFF2C273F), modifier = Modifier.padding(vertical = 12.dp))
 
@@ -2940,6 +2770,58 @@ fun ImageThumbnail(uri: Uri, modifier: Modifier = Modifier) {
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Default.Image, contentDescription = null, tint = Color.LightGray)
+        }
+    }
+}
+
+@Composable
+fun DrawerSelectableItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { onClick() }
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) Color(0xFF9E92FF) else Color(0xFFC5C0DB),
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = label,
+                color = if (selected) Color(0xFF9E92FF) else Color.White,
+                fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            )
+        }
+        
+        Box(
+            modifier = Modifier
+                .size(16.dp)
+                .clip(CircleShape)
+                .background(if (selected) Color(0xFF9E92FF) else Color.Transparent)
+                .border(1.5.dp, if (selected) Color(0xFF9E92FF) else Color(0xFFC5C0DB), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF161320))
+                )
+            }
         }
     }
 }

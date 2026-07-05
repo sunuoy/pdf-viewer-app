@@ -260,9 +260,11 @@ fun PdfViewerScreen(
     var pageColorType by remember { mutableStateOf(sharedPrefs.getString("reader_page_color_type", "original") ?: "original") }
     var isSearchActive by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
+    var isDocOptionsExpanded by remember { mutableStateOf(false) }
     var isPdfOptionsExpanded by remember { mutableStateOf(false) }
     var isControlOptionsExpanded by remember { mutableStateOf(false) }
     var isMiscOptionsExpanded by remember { mutableStateOf(false) }
+    var useOpenGlEngine by remember { mutableStateOf(sharedPrefs.getBoolean("use_opengl_engine", false)) }
     var searchQuery by remember { mutableStateOf("") }
     var searchMatches by remember { mutableStateOf<List<SearchMatch>>(emptyList()) }
     var currentMatchIndex by remember { mutableStateOf(-1) }
@@ -969,29 +971,29 @@ fun PdfViewerScreen(
                             expanded = isMenuExpanded,
                             onDismissRequest = { isMenuExpanded = false }
                         ) {
-                            // --- PDF & Document Options ---
+                            // --- Documents Options ---
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { isPdfOptionsExpanded = !isPdfOptionsExpanded }
+                                    .clickable { isDocOptionsExpanded = !isDocOptionsExpanded }
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "PDF & Document Options",
+                                    text = "Documents Options",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Icon(
-                                    imageVector = if (isPdfOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = if (isPdfOptionsExpanded) "Collapse" else "Expand",
+                                    imageVector = if (isDocOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (isDocOptionsExpanded) "Collapse" else "Expand",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
-                            if (isPdfOptionsExpanded) {
+                            if (isDocOptionsExpanded) {
                                 DropdownMenuItem(
                                     text = { Text("Open Bookmarks") },
                                     onClick = {
@@ -1008,16 +1010,6 @@ fun PdfViewerScreen(
                                     },
                                     leadingIcon = { Icon(Icons.Default.BorderColor, contentDescription = null) }
                                 )
-                                if (!isTextDocument && !isComicBook) {
-                                    DropdownMenuItem(
-                                        text = { Text("Edit PDF Text") },
-                                        onClick = {
-                                            isMenuExpanded = false
-                                            isPdfWordEditorOpen = true
-                                        },
-                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
-                                    )
-                                }
                                 if (!isComicBook) {
                                     DropdownMenuItem(
                                         text = { Text("Edit Page / Document") },
@@ -1057,7 +1049,7 @@ fun PdfViewerScreen(
                                 val shareLabel = when {
                                     isComicBook -> "Share Comic"
                                     isTextDocument -> "Share Document"
-                                    else -> "Share PDF"
+                                    else -> "Share Document"
                                 }
                                 DropdownMenuItem(
                                     text = { Text(shareLabel) },
@@ -1070,6 +1062,73 @@ fun PdfViewerScreen(
                             }
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                            // --- PDF Options ---
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { isPdfOptionsExpanded = !isPdfOptionsExpanded }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "PDF Options",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = if (isPdfOptionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (isPdfOptionsExpanded) "Collapse" else "Expand",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            if (isPdfOptionsExpanded) {
+                                if (!isTextDocument && !isComicBook) {
+                                    DropdownMenuItem(
+                                        text = { Text("Edit PDF Text") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            isPdfWordEditorOpen = true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("OpenGL Reading Engine") },
+                                    onClick = {
+                                        useOpenGlEngine = true
+                                        sharedPrefs.edit().putBoolean("use_opengl_engine", true).apply()
+                                        bitmapCache.evictAll()
+                                        pdfReloadTrigger++
+                                        Toast.makeText(context, "OpenGL GPU Engine Enabled", Toast.LENGTH_SHORT).show()
+                                    },
+                                    leadingIcon = {
+                                        RadioButton(
+                                            selected = useOpenGlEngine,
+                                            onClick = null
+                                        )
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Normal/Standard View") },
+                                    onClick = {
+                                        useOpenGlEngine = false
+                                        sharedPrefs.edit().putBoolean("use_opengl_engine", false).apply()
+                                        bitmapCache.evictAll()
+                                        pdfReloadTrigger++
+                                        Toast.makeText(context, "Standard Reading Engine Enabled", Toast.LENGTH_SHORT).show()
+                                    },
+                                    leadingIcon = {
+                                        RadioButton(
+                                            selected = !useOpenGlEngine,
+                                            onClick = null
+                                        )
+                                    }
+                                )
+                            }
 
                             // --- Control Options ---
                             Row(
@@ -4424,6 +4483,9 @@ fun ZoomableImage(
                 }
             }
     ) {
+        val context = LocalContext.current
+        val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
+        val useOpenGl = remember(sharedPrefs) { sharedPrefs.getBoolean("use_opengl_engine", false) }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -4431,7 +4493,12 @@ fun ZoomableImage(
                     scaleX = scale,
                     scaleY = scale,
                     translationX = offset.x,
-                    translationY = offset.y
+                    translationY = offset.y,
+                    compositingStrategy = if (useOpenGl) {
+                        androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                    } else {
+                        androidx.compose.ui.graphics.CompositingStrategy.Auto
+                    }
                 )
         ) {
             Image(

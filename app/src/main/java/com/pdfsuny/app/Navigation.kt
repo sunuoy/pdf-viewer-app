@@ -13,6 +13,11 @@ import com.pdfsuny.app.ui.screens.HomeScreen
 import com.pdfsuny.app.ui.screens.PdfViewerScreen
 import com.pdfsuny.app.ui.screens.BookmarkScreen
 import com.pdfsuny.app.ui.screens.SettingsScreen
+import com.pdfsuny.app.ui.screens.ControlOptionsScreen
+import com.pdfsuny.app.ui.screens.MiscOptionsScreen
+import com.pdfsuny.app.ui.screens.DocumentsOptionsScreen
+import com.pdfsuny.app.ui.screens.PdfOptionsScreen
+
 
 import androidx.navigation3.runtime.NavKey
 
@@ -56,10 +61,59 @@ fun MainNavigation(
             onNavigateToSettings = {
               backStack.add(SettingsPage)
             },
+            onNavigateToControlOptions = {
+              backStack.add(ControlOptionsPage)
+            },
+            onNavigateToMiscOptions = {
+              backStack.add(MiscOptionsPage)
+            },
+            onNavigateToDocumentsOptions = {
+              backStack.add(DocumentsOptionsPage)
+            },
+            onNavigateToPdfOptions = {
+              backStack.add(PdfOptionsPage)
+            },
+            modifier = Modifier.fillMaxSize()
+          )
+        }
+        entry<ControlOptionsPage> {
+          ControlOptionsScreen(
+            onBack = navigateBack,
+            onPdfSelected = { path ->
+              backStack.add(PdfViewer(path))
+            },
+            modifier = Modifier.fillMaxSize()
+          )
+        }
+        entry<MiscOptionsPage> {
+          MiscOptionsScreen(
+            onBack = navigateBack,
+            onPdfSelected = { path ->
+              backStack.add(PdfViewer(path))
+            },
+            modifier = Modifier.fillMaxSize()
+          )
+        }
+        entry<DocumentsOptionsPage> {
+          DocumentsOptionsScreen(
+            onBack = navigateBack,
+            onPdfSelected = { path ->
+              backStack.add(PdfViewer(path))
+            },
+            modifier = Modifier.fillMaxSize()
+          )
+        }
+        entry<PdfOptionsPage> {
+          PdfOptionsScreen(
+            onBack = navigateBack,
+            onPdfSelected = { path ->
+              backStack.add(PdfViewer(path))
+            },
             modifier = Modifier.fillMaxSize()
           )
         }
         entry<SettingsPage> {
+
           SettingsScreen(
             onBack = navigateBack,
             modifier = Modifier.fillMaxSize()

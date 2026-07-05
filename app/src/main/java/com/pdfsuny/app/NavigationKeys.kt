@@ -8,3 +8,9 @@ import kotlinx.serialization.Serializable
 @Serializable data object SettingsPage : NavKey
 @Serializable data class PdfViewer(val pdfPath: String) : NavKey
 @Serializable data class Bookmarks(val pdfPath: String, val currentPageIndex: Int = 0) : NavKey
+@Serializable data object ControlOptionsPage : NavKey
+@Serializable data object MiscOptionsPage : NavKey
+@Serializable data object DocumentsOptionsPage : NavKey
+@Serializable data object PdfOptionsPage : NavKey
+
+

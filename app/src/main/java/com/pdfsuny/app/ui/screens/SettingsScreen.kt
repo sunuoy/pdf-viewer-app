@@ -37,6 +37,7 @@ fun SettingsScreen(
     var highResRendering by remember { mutableStateOf(sharedPrefs.getBoolean("high_res_rendering", true)) }
     var nightModeDefault by remember { mutableStateOf(sharedPrefs.getBoolean("night_mode_default", false)) }
     var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
+    var useOpenGlEngine by remember { mutableStateOf(sharedPrefs.getBoolean("use_opengl_engine", false)) }
 
     val versionName = remember {
         try {
@@ -134,6 +135,25 @@ fun SettingsScreen(
                             onCheckedChange = { 
                                 isVerticalScroll = it
                                 sharedPrefs.edit().putBoolean("is_vertical_scroll", it).apply()
+                            }
+                        )
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("OpenGL Reading Engine", fontWeight = FontWeight.SemiBold)
+                            Text("GPU-Accelerated page rendering for ultra fast zooming and scrolling", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                        }
+                        Switch(
+                            checked = useOpenGlEngine,
+                            onCheckedChange = { 
+                                useOpenGlEngine = it
+                                sharedPrefs.edit().putBoolean("use_opengl_engine", it).apply()
+                                Toast.makeText(context, if (it) "OpenGL GPU Engine Enabled" else "OpenGL GPU Engine Disabled (Normal View)", Toast.LENGTH_SHORT).show()
                             }
                         )
                     }
