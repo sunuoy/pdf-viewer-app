@@ -237,4 +237,9 @@ class MainActivity : ComponentActivity() {
       database.recentPdfDao().insertRecentPdf(recentPdf)
     }
   }
+
+  companion object {
+    val appOpenTimeMillis = System.currentTimeMillis()
+  }
 }
+

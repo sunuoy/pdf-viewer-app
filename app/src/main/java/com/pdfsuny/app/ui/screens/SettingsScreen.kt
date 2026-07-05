@@ -4,6 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import com.pdfsuny.app.MainActivity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.delay
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -39,14 +45,46 @@ fun SettingsScreen(
     var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
     var useOpenGlEngine by remember { mutableStateOf(sharedPrefs.getBoolean("use_opengl_engine", false)) }
 
-    val versionName = remember {
+    val appInfo = remember {
         try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "1.0.1"
+            val code = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                pInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode.toLong()
+            }
+            Pair(pInfo.versionName ?: "1.4.0", code)
         } catch (e: Exception) {
-            "1.0.1"
+            Pair("1.4.0", 40L)
         }
     }
+
+    val appOpenTimeFormatted = remember {
+        try {
+            SimpleDateFormat("hh:mm:ss a", Locale.getDefault()).format(Date(MainActivity.appOpenTimeMillis))
+        } catch (e: Exception) {
+            "N/A"
+        }
+    }
+
+    var uptimeText by remember { mutableStateOf("0s") }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val durationMs = System.currentTimeMillis() - MainActivity.appOpenTimeMillis
+            val seconds = (durationMs / 1000) % 60
+            val minutes = (durationMs / (1000 * 60)) % 60
+            val hours = (durationMs / (1000 * 60 * 60))
+            uptimeText = when {
+                hours > 0 -> "${hours}h ${minutes}m ${seconds}s"
+                minutes > 0 -> "${minutes}m ${seconds}s"
+                else -> "${seconds}s"
+            }
+            delay(1000L)
+        }
+    }
+
 
     Scaffold(
         topBar = {
@@ -207,19 +245,35 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("About PDF Reader Suite", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Version", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            Text("${appInfo.first} (Build ${appInfo.second})", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Launched At", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            Text(appOpenTimeFormatted, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Version $versionName",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column {
+                            Text("Session Uptime", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                            Text(uptimeText, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "A high-performance offline PDF & multi-format document workspace for Android built with Jetpack Compose, Coroutines, Room Database, and Storage Access Framework.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedButton(
                         onClick = {
