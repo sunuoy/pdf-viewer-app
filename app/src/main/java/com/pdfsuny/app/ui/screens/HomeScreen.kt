@@ -2504,9 +2504,9 @@ fun HomeScreenDrawerContent(
 ) {
     val sharedPrefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
     
-    var isPdfOptionsExpanded by remember { mutableStateOf(true) }
-    var isControlOptionsExpanded by remember { mutableStateOf(true) }
-    var isMiscOptionsExpanded by remember { mutableStateOf(true) }
+    var isPdfOptionsExpanded by remember { mutableStateOf(false) }
+    var isControlOptionsExpanded by remember { mutableStateOf(false) }
+    var isMiscOptionsExpanded by remember { mutableStateOf(false) }
     
     var pageColorType by remember { mutableStateOf(sharedPrefs.getString("reader_page_color_type", "original") ?: "original") }
     var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }

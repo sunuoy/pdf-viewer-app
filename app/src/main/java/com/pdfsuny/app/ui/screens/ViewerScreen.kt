@@ -260,9 +260,9 @@ fun PdfViewerScreen(
     var pageColorType by remember { mutableStateOf(sharedPrefs.getString("reader_page_color_type", "original") ?: "original") }
     var isSearchActive by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
-    var isPdfOptionsExpanded by remember { mutableStateOf(true) }
-    var isControlOptionsExpanded by remember { mutableStateOf(true) }
-    var isMiscOptionsExpanded by remember { mutableStateOf(true) }
+    var isPdfOptionsExpanded by remember { mutableStateOf(false) }
+    var isControlOptionsExpanded by remember { mutableStateOf(false) }
+    var isMiscOptionsExpanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var searchMatches by remember { mutableStateOf<List<SearchMatch>>(emptyList()) }
     var currentMatchIndex by remember { mutableStateOf(-1) }
