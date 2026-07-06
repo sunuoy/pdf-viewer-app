@@ -117,6 +117,7 @@ fun HomeScreen(
     onNavigateToMiscOptions: () -> Unit = {},
     onNavigateToDocumentsOptions: () -> Unit = {},
     onNavigateToPdfOptions: () -> Unit = {},
+    onNavigateToArrangeImages: (List<String>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -187,10 +188,6 @@ fun HomeScreen(
     var watermarkOpacity by remember { mutableStateOf(0.3f) }
 
 
-    // Images to PDF State
-    val selectedImageUrisForPdf = remember { mutableStateListOf<Uri>() }
-    var showImagesToPdfReorderDialog by remember { mutableStateOf(false) }
-    val imagesToPdfReorderList = remember { mutableStateListOf<Uri>() }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var autoSaveLocationPrompt by remember { mutableStateOf(true) }
@@ -725,6 +722,7 @@ fun HomeScreen(
                                                     val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(document, page)
                                                     contentStream.drawImage(pdImage, 0f, 0f)
                                                     contentStream.close()
+                                                    bitmap.recycle()
                                                 }
                                             }
                                             entry = zis.nextEntry
@@ -1100,72 +1098,6 @@ fun HomeScreen(
         }
     }
 
-    val saveImagesToPdfLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/pdf")
-    ) { uri: Uri? ->
-        uri?.let { destUri ->
-            isProcessing = true
-            processingMessage = "Compiling images to PDF..."
-            scope.launch {
-                try {
-                    withContext(Dispatchers.IO) {
-                        val document = com.tom_roush.pdfbox.pdmodel.PDDocument()
-                        val openInputStream = { u: Uri ->
-                            if (u.scheme == "file") {
-                                java.io.FileInputStream(java.io.File(u.path ?: ""))
-                            } else {
-                                context.contentResolver.openInputStream(u)
-                            }
-                        }
-                        for (imgUri in selectedImageUrisForPdf) {
-                            openInputStream(imgUri)?.use { stream ->
-                                val bitmap = android.graphics.BitmapFactory.decodeStream(stream)
-                                if (bitmap != null) {
-                                    val page = com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(bitmap.width.toFloat(), bitmap.height.toFloat()))
-                                    document.addPage(page)
-                                    val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
-                                    val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(document, page)
-                                    contentStream.drawImage(pdImage, 0f, 0f)
-                                    contentStream.close()
-                                }
-                            }
-                        }
-                        val openOutputStream = { u: Uri ->
-                            if (u.scheme == "file") {
-                                java.io.FileOutputStream(java.io.File(u.path ?: ""))
-                            } else {
-                                context.contentResolver.openOutputStream(u)
-                            }
-                        }
-                        openOutputStream(destUri)?.use { out ->
-                            document.save(out)
-                        }
-                        document.close()
-                    }
-                    processedFileUri = destUri
-                    generatedMimeType = "application/pdf"
-                    showSuccessDialog = true
-                } catch (e: Exception) {
-                    android.util.Log.e("HomeScreen", "Error compiling images to PDF", e)
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Images compilation failed: ${e.message}", Toast.LENGTH_LONG).show()
-                    }
-                } finally {
-                    isProcessing = false
-                    withContext(Dispatchers.IO) {
-                        context.cacheDir.listFiles()?.forEach { file ->
-                            if (file.name.startsWith("temp_editor_input_") ||
-                                file.name.startsWith("temp_img_") ||
-                                file.name.startsWith("temp_merge_")) {
-                                try { file.delete() } catch (e: java.lang.Exception) {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
@@ -1187,11 +1119,7 @@ fun HomeScreen(
                             androidx.core.content.FileProvider.getUriForFile(context, authority, tempFile)
                         }
                     }
-                    selectedImageUrisForPdf.clear()
-                    selectedImageUrisForPdf.addAll(tempUris)
-                    imagesToPdfReorderList.clear()
-                    imagesToPdfReorderList.addAll(tempUris)
-                    showImagesToPdfReorderDialog = true
+                    onNavigateToArrangeImages(tempUris.map { it.toString() })
                 } catch (e: Exception) {
                     android.util.Log.e("HomeScreen", "Error preparing images", e)
                     Toast.makeText(context, "Failed to load images: ${e.message}", Toast.LENGTH_LONG).show()
@@ -1578,8 +1506,7 @@ fun HomeScreen(
                                 if (item.tool == EditorTool.MERGE_PDFS) {
                                     mergePickerLauncher.launch(arrayOf("application/pdf"))
                                 } else if (item.tool == EditorTool.IMAGES_TO_PDF) {
-                                    activeTool = item.tool
-                                    imagePickerLauncher.launch(arrayOf("image/*"))
+                                    onNavigateToArrangeImages(emptyList())
                                 } else if (item.tool == EditorTool.ZIP_TO_PDF) {
                                     activeTool = item.tool
                                     editorFilePickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
@@ -1820,119 +1747,7 @@ fun HomeScreen(
         )
     }
 
-    // Images to PDF Reorder Dialog
-    if (showImagesToPdfReorderDialog) {
-        AlertDialog(
-            onDismissRequest = { showImagesToPdfReorderDialog = false },
-            title = { Text("Arrange Images for PDF", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Arrange order or remove images before compiling:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 320.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        itemsIndexed(imagesToPdfReorderList) { index, uri ->
-                            val fileName = getFileName(context, uri) ?: "Image_${index + 1}.jpg"
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "${index + 1}.",
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    ImageThumbnail(
-                                        uri = uri,
-                                        modifier = Modifier
-                                            .size(50.dp)
-                                            .clip(RoundedCornerShape(6.dp))
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(
-                                        text = fileName,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    Row {
-                                        TooltipIconButton(
-                                            onClick = {
-                                                if (index > 0) {
-                                                    val item = imagesToPdfReorderList.removeAt(index)
-                                                    imagesToPdfReorderList.add(index - 1, item)
-                                                }
-                                            },
-                                            enabled = index > 0,
-                                            tooltipText = "Move Up"
-                                        ) {
-                                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up")
-                                        }
-                                        TooltipIconButton(
-                                            onClick = {
-                                                if (index < imagesToPdfReorderList.size - 1) {
-                                                    val item = imagesToPdfReorderList.removeAt(index)
-                                                    imagesToPdfReorderList.add(index + 1, item)
-                                                }
-                                            },
-                                            enabled = index < imagesToPdfReorderList.size - 1,
-                                            tooltipText = "Move Down"
-                                        ) {
-                                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down")
-                                        }
-                                        TooltipIconButton(
-                                            onClick = {
-                                                imagesToPdfReorderList.removeAt(index)
-                                            },
-                                            tooltipText = "Remove"
-                                        ) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (imagesToPdfReorderList.isEmpty()) {
-                            Toast.makeText(context, "No images selected.", Toast.LENGTH_SHORT).show()
-                        } else {
-                            selectedImageUrisForPdf.clear()
-                            selectedImageUrisForPdf.addAll(imagesToPdfReorderList)
-                            showImagesToPdfReorderDialog = false
-                            saveImagesToPdfLauncher.launch("images_compiled.pdf")
-                        }
-                    }
-                ) {
-                    Text("Save to PDF")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showImagesToPdfReorderDialog = false }
-                ) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
+
 
     // Split Preview Dialog
     if (showSplitPreviewDialog && selectedInputUri != null) {
@@ -3301,40 +3116,7 @@ fun DrawerActionItem(
     }
 }
 
-@Composable
-fun ImageThumbnail(uri: Uri, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    var bitmap by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    LaunchedEffect(uri) {
-        withContext(Dispatchers.IO) {
-            try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    val options = android.graphics.BitmapFactory.Options().apply {
-                        inSampleSize = 4 // Decode at 1/4 size to save memory and be fast
-                    }
-                    bitmap = android.graphics.BitmapFactory.decodeStream(stream, null, options)
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-    }
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap!!.asImageBitmap(),
-            contentDescription = null,
-            modifier = modifier,
-            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-        )
-    } else {
-        Box(
-            modifier = modifier.background(Color.Gray),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Default.Image, contentDescription = null, tint = Color.LightGray)
-        }
-    }
-}
+
 
 @Composable
 fun DrawerSelectableItem(

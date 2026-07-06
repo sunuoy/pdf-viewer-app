@@ -18,6 +18,29 @@ This file tracks all modifications, updates, and releases for the PDF Viewer App
 ### 4. Assets Synchronization
 - During application startup, check the active dynamic version and perform any necessary file or cache migrations (like asset copying) to match the new bundle layout.
 
+## [V 1.5.0] - Dedicated Arrange Images Screen & Memory Optimization - 2026-07-06
+### Added
+- **Dedicated Arrange Images Screen**: Full-screen image list ordering, file deletion, and quick addition flow replacing the limited dialog layout.
+- **Page Layout Sizing Settings**: Integrated custom PDF target sizing (Auto-size matching images, A4 Portrait, A4 Landscape) with high-quality scaling.
+- **Memory Safety Optimization**: Integrated explicit native bitmap recycling in PDF image compilation loops (for both local images and ZIP compilation) to prevent OOM exceptions on large batches.
+- **Premium UI Upgrades**: Redesigned layout selection panel using gradient-filled background cards and clean, custom Material icons.
+
+## [V 1.4.0] - Secure PDF Tools & Quick Action Layout - 2026-07-05
+### Added
+- **Secure PDF Encryption**: Password protection, password removal, and custom watermarking tools added to the PDF Document Editor.
+- **Enhance Created PDFs**: New 3-column quick action grid layout section added to the Editor screen.
+- **Device & App Diagnostics**: System launch time tracking, live session uptime, and detailed build/version code added to the settings screen.
+- **Scroll Mapping Synchronization**: Synchronized scrollbar thumb and pages navigation mapping to eliminate layout jumps.
+### Changed
+- **Home Screen Label**: Changed 'Open PDF File' action text to 'Open File'.
+### Fixed
+- **Password Protected PDF Loading**: Dynamically prompts for password, decrypts securely in cache, and loads the decrypted copy securely.
+
+## [V 1.2.3] - Tabbed Drawer & Reader Bar Promotion - 2026-07-05
+### Added
+- **Relocated Drawer Navigation**: Re-architected drawer layout by relocating Documents, PDF, Control, and Misc options to separate, dedicated pages.
+- **Customize Reader Bar Promotion**: Promoted customizable bottom reader bar options for direct settings drawer access.
+
 ## [V 1.2.2] - Ruler Live Preview & Stripe Toggle - 2026-07-04
 ### Added
 - **Live Ruler Preview**: Added a responsive, mini themed reading ruler preview inside the Ruler Settings dialog that updates in real-time as themes, height, stripe height, opacity, and stripe color are configured.

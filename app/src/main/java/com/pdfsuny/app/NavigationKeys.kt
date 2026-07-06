@@ -12,5 +12,7 @@ import kotlinx.serialization.Serializable
 @Serializable data object MiscOptionsPage : NavKey
 @Serializable data object DocumentsOptionsPage : NavKey
 @Serializable data object PdfOptionsPage : NavKey
+@Serializable data class ArrangeImagesPage(val imageUris: List<String>) : NavKey
+
 
 

@@ -17,6 +17,8 @@ import com.pdfsuny.app.ui.screens.ControlOptionsScreen
 import com.pdfsuny.app.ui.screens.MiscOptionsScreen
 import com.pdfsuny.app.ui.screens.DocumentsOptionsScreen
 import com.pdfsuny.app.ui.screens.PdfOptionsScreen
+import com.pdfsuny.app.ui.screens.ArrangeImagesScreen
+
 
 
 import androidx.navigation3.runtime.NavKey
@@ -72,6 +74,9 @@ fun MainNavigation(
             },
             onNavigateToPdfOptions = {
               backStack.add(PdfOptionsPage)
+            },
+            onNavigateToArrangeImages = { uris ->
+              backStack.add(ArrangeImagesPage(uris))
             },
             modifier = Modifier.fillMaxSize()
           )
@@ -138,6 +143,16 @@ fun MainNavigation(
               if (backStack.size > 1) {
                 backStack.removeLastOrNull()
               }
+            },
+            modifier = Modifier.fillMaxSize()
+          )
+        }
+        entry<ArrangeImagesPage> { key ->
+          ArrangeImagesScreen(
+            initialImageUris = key.imageUris,
+            onBack = navigateBack,
+            onNavigateToPdfViewer = { path ->
+              backStack.add(PdfViewer(path))
             },
             modifier = Modifier.fillMaxSize()
           )
