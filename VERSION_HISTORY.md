@@ -18,6 +18,16 @@ This file tracks all modifications, updates, and releases for the PDF Viewer App
 ### 4. Assets Synchronization
 - During application startup, check the active dynamic version and perform any necessary file or cache migrations (like asset copying) to match the new bundle layout.
 
+## [V 1.5.1] - Advanced Images to PDF Formatting & Grid Layout - 2026-07-06
+### Added
+- **3-Column Grid Layout**: Selection screen displaying images in a clean, square grid layout with page order indicators.
+- **Translucent Circle Edit Button**: Translucent circle with expand icon in top-right of each image tile for direct editing access.
+- **Dialog-Embedded Management**: Move Left, Move Right, and Delete options inside the image editor dialog.
+- **Scrollable Dialog Support**: Scroll support on Page Sizing, Borders, and Page Number dialogs to resolve layout clipping on small screens.
+- **Page Number Custom Dialog**: Fully styled page style numbering selection with a Set as default checkbox.
+- **Instant PDF Preview**: Real-time PDF layout preview with page numbers, custom margins, and borders, loaded via file:// URI.
+- **Interactive Settings summary card**: Clickable AssistChips directly on screen to modify page size, layout margins, and numbering.
+
 ## [V 1.5.0] - Dedicated Arrange Images Screen & Memory Optimization - 2026-07-06
 ### Added
 - **Dedicated Arrange Images Screen**: Full-screen image list ordering, file deletion, and quick addition flow replacing the limited dialog layout.
