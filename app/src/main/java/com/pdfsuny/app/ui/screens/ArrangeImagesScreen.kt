@@ -91,6 +91,10 @@ fun ArrangeImagesScreen(
     var pageNumberStyle by remember {
         mutableStateOf(sharedPrefs.getString("default_page_number_style", "none") ?: "none")
     }
+    var grayscalePdf by remember { mutableStateOf(false) }
+    var watermarkText by remember { mutableStateOf("") }
+    var customWidth by remember { mutableStateOf(595f) }
+    var customHeight by remember { mutableStateOf(842f) }
 
     // Dialog Visibilities
     var showPageSizeDialog by remember { mutableStateOf(false) }
@@ -192,7 +196,11 @@ fun ArrangeImagesScreen(
                         pageMargins = pageMargins,
                         borderWidth = borderWidth,
                         borderColorHex = borderColorHex,
-                        pageNumberStyle = pageNumberStyle
+                        pageNumberStyle = pageNumberStyle,
+                        grayscalePdf = grayscalePdf,
+                        watermarkText = watermarkText,
+                        customWidth = customWidth,
+                        customHeight = customHeight
                     )
                     processedFileUri = targetUri
                     showSuccessDialog = true
@@ -224,7 +232,11 @@ fun ArrangeImagesScreen(
                         pageMargins = pageMargins,
                         borderWidth = borderWidth,
                         borderColorHex = borderColorHex,
-                        pageNumberStyle = pageNumberStyle
+                        pageNumberStyle = pageNumberStyle,
+                        grayscalePdf = grayscalePdf,
+                        watermarkText = watermarkText,
+                        customWidth = customWidth,
+                        customHeight = customHeight
                     )
                     onNavigateToPdfViewer(Uri.fromFile(tempFile).toString())
                 } catch (e: Exception) {
@@ -466,12 +478,9 @@ fun ArrangeImagesScreen(
                             }
                             
                             val sizeText = when (pageSize) {
-                                "auto" -> "Fit Image (Auto)"
-                                "a4" -> "A4 (${if (pageOrientation == "portrait") "Portrait" else "Landscape"})"
-                                "letter" -> "Letter (${if (pageOrientation == "portrait") "Portrait" else "Landscape"})"
-                                "legal" -> "Legal (${if (pageOrientation == "portrait") "Portrait" else "Landscape"})"
-                                "a3" -> "A3 (${if (pageOrientation == "portrait") "Portrait" else "Landscape"})"
-                                else -> pageSize
+                                "auto" -> "Fit (Auto)"
+                                "custom" -> "Custom (${customWidth.toInt()}x${customHeight.toInt()} pt)"
+                                else -> "${pageSize.uppercase()} (${if (pageOrientation == "portrait") "Port" else "Land"})"
                             }
                             
                             val marginText = when (pageMargins) {
@@ -549,10 +558,14 @@ fun ArrangeImagesScreen(
                 PageSizeDialog(
                     initialPageSize = pageSize,
                     initialOrientation = pageOrientation,
+                    initialCustomWidth = customWidth,
+                    initialCustomHeight = customHeight,
                     onDismiss = { showPageSizeDialog = false },
-                    onConfirm = { size, orient ->
+                    onConfirm = { size, orient, w, h ->
                         pageSize = size
                         pageOrientation = orient
+                        customWidth = w
+                        customHeight = h
                         showPageSizeDialog = false
                     }
                 )
@@ -563,11 +576,15 @@ fun ArrangeImagesScreen(
                     initialMargin = pageMargins,
                     initialBorderWidth = borderWidth,
                     initialBorderColorHex = borderColorHex,
+                    initialGrayscale = grayscalePdf,
+                    initialWatermark = watermarkText,
                     onDismiss = { showBordersMarginsDialog = false },
-                    onConfirm = { marg, w, col ->
+                    onConfirm = { marg, w, col, gray, watermark ->
                         pageMargins = marg
                         borderWidth = w
                         borderColorHex = col
+                        grayscalePdf = gray
+                        watermarkText = watermark
                         showBordersMarginsDialog = false
                     }
                 )
@@ -976,7 +993,11 @@ private suspend fun compilePdfFromImages(
     pageMargins: Float,
     borderWidth: Float,
     borderColorHex: String,
-    pageNumberStyle: String
+    pageNumberStyle: String,
+    grayscalePdf: Boolean,
+    watermarkText: String,
+    customWidth: Float,
+    customHeight: Float
 ) = withContext(Dispatchers.IO) {
     val document = com.tom_roush.pdfbox.pdmodel.PDDocument()
     
@@ -990,42 +1011,46 @@ private suspend fun compilePdfFromImages(
 
     for ((pageIndex, item) in imageList.withIndex()) {
         openInputStream(item.currentUri)?.use { stream ->
-            val bitmap = BitmapFactory.decodeStream(stream)
-            if (bitmap != null) {
-                val page = when (pageSize) {
-                    "a4" -> {
-                        if (pageOrientation == "landscape") {
-                            com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(842f, 595f))
-                        } else {
-                            com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle.A4)
-                        }
+            val originalBitmap = BitmapFactory.decodeStream(stream)
+            if (originalBitmap != null) {
+                val bitmap = if (grayscalePdf) {
+                    val converted = getFilteredBitmap(originalBitmap, "grayscale")
+                    if (converted != originalBitmap) {
+                        originalBitmap.recycle()
                     }
-                    "letter" -> {
-                        if (pageOrientation == "landscape") {
-                            com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(792f, 612f))
-                        } else {
-                            com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(612f, 792f))
-                        }
+                    converted
+                } else {
+                    originalBitmap
+                }
+
+                val rect = when (pageSize) {
+                    "a0" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(2384f, 3370f)
+                    "a1" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(1684f, 2384f)
+                    "a2" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(1190f, 1684f)
+                    "a3" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(842f, 1190f)
+                    "a4" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(595f, 842f)
+                    "a5" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(420f, 595f)
+                    "a6" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(298f, 420f)
+                    "a7" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(210f, 298f)
+                    "a8" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(147f, 210f)
+                    "a9" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(105f, 147f)
+                    "a10" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(74f, 105f)
+                    "letter" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(612f, 792f)
+                    "legal" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(612f, 1008f)
+                    "custom" -> com.tom_roush.pdfbox.pdmodel.common.PDRectangle(customWidth, customHeight)
+                    else -> null // "auto"
+                }
+
+                val page = if (rect != null) {
+                    if (pageOrientation == "landscape") {
+                        com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(rect.height, rect.width))
+                    } else {
+                        com.tom_roush.pdfbox.pdmodel.PDPage(rect)
                     }
-                    "legal" -> {
-                        if (pageOrientation == "landscape") {
-                            com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(1008f, 612f))
-                        } else {
-                            com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(612f, 1008f))
-                        }
-                    }
-                    "a3" -> {
-                        if (pageOrientation == "landscape") {
-                            com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(1191f, 842f))
-                        } else {
-                            com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(842f, 1191f))
-                        }
-                    }
-                    else -> { // "auto"
-                        val w = bitmap.width.toFloat() + (pageMargins * 2)
-                        val h = bitmap.height.toFloat() + (pageMargins * 2)
-                        com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(w, h))
-                    }
+                } else {
+                    val w = bitmap.width.toFloat() + (pageMargins * 2)
+                    val h = bitmap.height.toFloat() + (pageMargins * 2)
+                    com.tom_roush.pdfbox.pdmodel.PDPage(com.tom_roush.pdfbox.pdmodel.common.PDRectangle(w, h))
                 }
                 
                 document.addPage(page)
@@ -1058,6 +1083,20 @@ private suspend fun compilePdfFromImages(
                     contentStream.setStrokingColor(r, g, b)
                     contentStream.addRect(x, y, drawW, drawH)
                     contentStream.stroke()
+                }
+                
+                if (watermarkText.isNotEmpty()) {
+                    contentStream.beginText()
+                    contentStream.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA_BOLD, 40f)
+                    contentStream.setNonStrokingColor(0.85f, 0.85f, 0.85f)
+                    val angle = Math.toRadians(45.0)
+                    val approxTextW = watermarkText.length * 20f
+                    val textX = (pageW - approxTextW) / 2f
+                    val textY = pageH / 2f
+                    val matrix = com.tom_roush.pdfbox.util.Matrix.getRotateInstance(angle, textX, textY)
+                    contentStream.setTextMatrix(matrix)
+                    contentStream.showText(watermarkText)
+                    contentStream.endText()
                 }
                 
                 if (pageNumberStyle != "none") {
@@ -1211,12 +1250,16 @@ fun BordersMarginsDialog(
     initialMargin: Float,
     initialBorderWidth: Float,
     initialBorderColorHex: String,
+    initialGrayscale: Boolean,
+    initialWatermark: String,
     onDismiss: () -> Unit,
-    onConfirm: (margin: Float, borderWidth: Float, borderColorHex: String) -> Unit
+    onConfirm: (margin: Float, borderWidth: Float, borderColorHex: String, grayscale: Boolean, watermark: String) -> Unit
 ) {
     var margin by remember { mutableStateOf(initialMargin) }
     var borderWidth by remember { mutableStateOf(initialBorderWidth) }
     var borderColorHex by remember { mutableStateOf(initialBorderColorHex) }
+    var grayscale by remember { mutableStateOf(initialGrayscale) }
+    var watermark by remember { mutableStateOf(initialWatermark) }
     
     val marginOptions = listOf(0f to "None", 12f to "Small", 24f to "Medium", 48f to "Large")
     val borderOptions = listOf(0f to "None", 1f to "Thin", 3f to "Medium", 5f to "Thick", 10f to "X-Thick")
@@ -1319,10 +1362,42 @@ fun BordersMarginsDialog(
                         }
                     }
                 }
+                
+                // Grayscale Toggle
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Grayscale PDF", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text("Convert all pages to black and white", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    }
+                    Switch(
+                        checked = grayscale,
+                        onCheckedChange = { grayscale = it }
+                    )
+                }
+
+                // Watermark Text Input
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
+                Column {
+                    Text("Add Watermark", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = watermark,
+                        onValueChange = { watermark = it },
+                        label = { Text("Watermark Text (e.g. DRAFT)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("None") }
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(margin, borderWidth, borderColorHex) }) {
+            Button(onClick = { onConfirm(margin, borderWidth, borderColorHex, grayscale, watermark) }) {
                 Text("Save Settings")
             }
         },
@@ -1338,20 +1413,36 @@ fun BordersMarginsDialog(
 fun PageSizeDialog(
     initialPageSize: String,
     initialOrientation: String,
+    initialCustomWidth: Float,
+    initialCustomHeight: Float,
     onDismiss: () -> Unit,
-    onConfirm: (pageSize: String, orientation: String) -> Unit
+    onConfirm: (pageSize: String, orientation: String, customWidth: Float, customHeight: Float) -> Unit
 ) {
     var selectedSize by remember { mutableStateOf(initialPageSize) }
     var selectedOrientation by remember { mutableStateOf(initialOrientation) }
-    
-    val sizeOptions = listOf(
-        "auto" to "Fit Image (Auto)",
-        "a4" to "A4 (595 x 842 pt)",
-        "letter" to "Letter (612 x 792 pt)",
-        "legal" to "Legal (612 x 1008 pt)",
-        "a3" to "A3 (842 x 1191 pt)"
+    var widthInput by remember { mutableStateOf(initialCustomWidth.toInt().toString()) }
+    var heightInput by remember { mutableStateOf(initialCustomHeight.toInt().toString()) }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    val standardSizes = listOf(
+        "a0" to "A0 (841 x 1189 mm)",
+        "a1" to "A1 (594 x 841 mm)",
+        "a2" to "A2 (420 x 594 mm)",
+        "a3" to "A3 (297 x 420 mm)",
+        "a4" to "A4 (210 x 297 mm)",
+        "a5" to "A5 (148 x 210 mm)",
+        "a6" to "A6 (105 x 148 mm)",
+        "a7" to "A7 (74 x 105 mm)",
+        "a8" to "A8 (52 x 74 mm)",
+        "a9" to "A9 (37 x 52 mm)",
+        "a10" to "A10 (26 x 37 mm)",
+        "letter" to "Letter (8.5 x 11 in)",
+        "legal" to "Legal (8.5 x 14 in)"
     )
-    
+
+    val isStandardSize = selectedSize != "auto" && selectedSize != "custom"
+    val dropdownLabel = standardSizes.firstOrNull { it.first == selectedSize }?.second ?: "A4 (210 x 297 mm)"
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Page Sizing & Orientation", fontWeight = FontWeight.Bold) },
@@ -1360,29 +1451,131 @@ fun PageSizeDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Column {
-                    Text("Standard Page Sizes", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        sizeOptions.forEach { (size, label) ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { selectedSize = size }
-                                    .padding(vertical = 8.dp)
-                            ) {
-                                RadioButton(
-                                    selected = selectedSize == size,
-                                    onClick = { selectedSize = size }
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(text = label, fontSize = 14.sp)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Select Page Layout", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
+                    
+                    // 1. Fit Image (Auto)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedSize = "auto" }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        RadioButton(
+                            selected = selectedSize == "auto",
+                            onClick = { selectedSize = "auto" }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(text = "Fit Image (Auto)", fontSize = 14.sp)
+                    }
+
+                    // 2. Standard Size Dropdown
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { 
+                                if (!isStandardSize) {
+                                    selectedSize = "a4" // Default standard size
+                                }
+                            }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        RadioButton(
+                            selected = isStandardSize,
+                            onClick = { 
+                                if (!isStandardSize) {
+                                    selectedSize = "a4"
+                                }
+                            }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "Standard Page Size", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { 
+                                        selectedSize = if (isStandardSize) selectedSize else "a4"
+                                        dropdownExpanded = true 
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(text = dropdownLabel, fontSize = 13.sp)
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                                    }
+                                }
+                                DropdownMenu(
+                                    expanded = dropdownExpanded,
+                                    onDismissRequest = { dropdownExpanded = false },
+                                    modifier = Modifier.fillMaxWidth(0.7f)
+                                ) {
+                                    standardSizes.forEach { (size, label) ->
+                                        DropdownMenuItem(
+                                            text = { Text(label, fontSize = 13.sp) },
+                                            onClick = {
+                                                selectedSize = size
+                                                dropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
+
+                    // 3. Custom Size
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedSize = "custom" }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        RadioButton(
+                            selected = selectedSize == "custom",
+                            onClick = { selectedSize = "custom" }
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(text = "Custom Sizing", fontSize = 14.sp)
+                    }
                 }
-                
+
+                // Custom Inputs
+                if (selectedSize == "custom") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Custom Dimensions (in points)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = widthInput,
+                                onValueChange = { widthInput = it.filter { c -> c.isDigit() } },
+                                label = { Text("Width (pt)") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = heightInput,
+                                onValueChange = { heightInput = it.filter { c -> c.isDigit() } },
+                                label = { Text("Height (pt)") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                        }
+                    }
+                }
+
+                // Page Orientation (Not for Auto-fit)
                 if (selectedSize != "auto") {
                     Column {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
@@ -1419,7 +1612,13 @@ fun PageSizeDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(selectedSize, selectedOrientation) }) {
+            Button(
+                onClick = {
+                    val w = widthInput.toFloatOrNull() ?: 595f
+                    val h = heightInput.toFloatOrNull() ?: 842f
+                    onConfirm(selectedSize, selectedOrientation, w, h)
+                }
+            ) {
                 Text("Apply Sizing")
             }
         },
