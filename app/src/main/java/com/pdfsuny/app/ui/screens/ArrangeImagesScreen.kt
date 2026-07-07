@@ -52,6 +52,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.BlendMode
 import java.io.FileOutputStream
 import java.io.InputStream
 
@@ -87,12 +95,17 @@ fun ArrangeImagesScreen(
     var pageOrientation by remember { mutableStateOf("portrait") } // "portrait", "landscape"
     var pageMargins by remember { mutableStateOf(0f) } // 0f, 12f, 24f, 48f
     var borderWidth by remember { mutableStateOf(0f) } // 0f, 1f, 3f, 5f, 10f
-    var borderColorHex by remember { mutableStateOf("#000000") }
+    var borderColorHex by remember {
+        mutableStateOf(sharedPrefs.getString("default_border_color", "#000000") ?: "#000000")
+    }
     var pageNumberStyle by remember {
         mutableStateOf(sharedPrefs.getString("default_page_number_style", "none") ?: "none")
     }
     var grayscalePdf by remember { mutableStateOf(false) }
     var watermarkText by remember { mutableStateOf("") }
+    var watermarkColorHex by remember {
+        mutableStateOf(sharedPrefs.getString("default_watermark_color", "#D3D3D3") ?: "#D3D3D3")
+    }
     var customWidth by remember { mutableStateOf(595f) }
     var customHeight by remember { mutableStateOf(842f) }
 
@@ -199,6 +212,7 @@ fun ArrangeImagesScreen(
                         pageNumberStyle = pageNumberStyle,
                         grayscalePdf = grayscalePdf,
                         watermarkText = watermarkText,
+                        watermarkColorHex = watermarkColorHex,
                         customWidth = customWidth,
                         customHeight = customHeight
                     )
@@ -235,6 +249,7 @@ fun ArrangeImagesScreen(
                         pageNumberStyle = pageNumberStyle,
                         grayscalePdf = grayscalePdf,
                         watermarkText = watermarkText,
+                        watermarkColorHex = watermarkColorHex,
                         customWidth = customWidth,
                         customHeight = customHeight
                     )
@@ -578,13 +593,15 @@ fun ArrangeImagesScreen(
                     initialBorderColorHex = borderColorHex,
                     initialGrayscale = grayscalePdf,
                     initialWatermark = watermarkText,
+                    initialWatermarkColorHex = watermarkColorHex,
                     onDismiss = { showBordersMarginsDialog = false },
-                    onConfirm = { marg, w, col, gray, watermark ->
+                    onConfirm = { marg, w, col, gray, watermark, watermarkCol ->
                         pageMargins = marg
                         borderWidth = w
                         borderColorHex = col
                         grayscalePdf = gray
                         watermarkText = watermark
+                        watermarkColorHex = watermarkCol
                         showBordersMarginsDialog = false
                     }
                 )
@@ -996,6 +1013,7 @@ private suspend fun compilePdfFromImages(
     pageNumberStyle: String,
     grayscalePdf: Boolean,
     watermarkText: String,
+    watermarkColorHex: String,
     customWidth: Float,
     customHeight: Float
 ) = withContext(Dispatchers.IO) {
@@ -1088,7 +1106,15 @@ private suspend fun compilePdfFromImages(
                 if (watermarkText.isNotEmpty()) {
                     contentStream.beginText()
                     contentStream.setFont(com.tom_roush.pdfbox.pdmodel.font.PDType1Font.HELVETICA_BOLD, 40f)
-                    contentStream.setNonStrokingColor(0.85f, 0.85f, 0.85f)
+                    val c = try {
+                        android.graphics.Color.parseColor(watermarkColorHex)
+                    } catch (e: Exception) {
+                        android.graphics.Color.LTGRAY
+                    }
+                    val r = android.graphics.Color.red(c) / 255f
+                    val g = android.graphics.Color.green(c) / 255f
+                    val b = android.graphics.Color.blue(c) / 255f
+                    contentStream.setNonStrokingColor(r, g, b)
                     val angle = Math.toRadians(45.0)
                     val approxTextW = watermarkText.length * 20f
                     val textX = (pageW - approxTextW) / 2f
@@ -1252,26 +1278,23 @@ fun BordersMarginsDialog(
     initialBorderColorHex: String,
     initialGrayscale: Boolean,
     initialWatermark: String,
+    initialWatermarkColorHex: String,
     onDismiss: () -> Unit,
-    onConfirm: (margin: Float, borderWidth: Float, borderColorHex: String, grayscale: Boolean, watermark: String) -> Unit
+    onConfirm: (margin: Float, borderWidth: Float, borderColorHex: String, grayscale: Boolean, watermark: String, watermarkColorHex: String) -> Unit
 ) {
+    val context = LocalContext.current
     var margin by remember { mutableStateOf(initialMargin) }
     var borderWidth by remember { mutableStateOf(initialBorderWidth) }
     var borderColorHex by remember { mutableStateOf(initialBorderColorHex) }
     var grayscale by remember { mutableStateOf(initialGrayscale) }
     var watermark by remember { mutableStateOf(initialWatermark) }
+    var watermarkColorHex by remember { mutableStateOf(initialWatermarkColorHex) }
+    var showColorPicker by remember { mutableStateOf(false) }
+    var showBorderColorPicker by remember { mutableStateOf(false) }
     
     val marginOptions = listOf(0f to "None", 12f to "Small", 24f to "Medium", 48f to "Large")
     val borderOptions = listOf(0f to "None", 1f to "Thin", 3f to "Medium", 5f to "Thick", 10f to "X-Thick")
-    val colorPresets = listOf(
-        "#000000" to Color.Black,
-        "#7F7F7F" to Color.Gray,
-        "#D3D3D3" to Color.LightGray,
-        "#E53935" to Color(0xFFE53935),
-        "#1E88E5" to Color(0xFF1E88E5),
-        "#43A047" to Color(0xFF43A047),
-        "#FFB300" to Color(0xFFFFB300)
-    )
+
     
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1326,39 +1349,57 @@ fun BordersMarginsDialog(
                 }
                 
                 if (borderWidth > 0f) {
-                    Column {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Border Color", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
-                        Spacer(modifier = Modifier.height(8.dp))
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showBorderColorPicker = true }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            colorPresets.forEach { (hex, color) ->
-                                val isSel = borderColorHex == hex
-                                Box(
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .clip(CircleShape)
-                                        .background(color)
-                                        .border(
-                                            width = if (isSel) 3.dp else 1.dp,
-                                            color = if (isSel) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.5f),
-                                            shape = CircleShape
-                                        )
-                                        .clickable { borderColorHex = hex },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isSel) {
-                                        Icon(
-                                            Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = if (color == Color.White || color == Color.LightGray) Color.Black else Color.White,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
+                            val currentPreviewColor = try {
+                                Color(android.graphics.Color.parseColor(if (borderColorHex.startsWith("#")) borderColorHex else "#$borderColorHex"))
+                            } catch (e: Exception) {
+                                Color.Black
                             }
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(currentPreviewColor)
+                                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val luminance = currentPreviewColor.red * 0.299f + currentPreviewColor.green * 0.587f + currentPreviewColor.blue * 0.114f
+                                val tint = if (luminance > 0.5f) Color.Black else Color.White
+                                Icon(
+                                    Icons.Default.Palette,
+                                    contentDescription = "Pick Color",
+                                    tint = tint,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Choose Custom Color", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Text(borderColorHex.uppercase(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                            }
+                        }
+
+                        if (showBorderColorPicker) {
+                            ColorPickerDialog(
+                                initialColorHex = borderColorHex,
+                                onDismiss = { showBorderColorPicker = false },
+                                onConfirm = { hex, setAsDefault ->
+                                    borderColorHex = hex
+                                    val sharedPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                                    if (setAsDefault) {
+                                        sharedPrefs.edit().putString("default_border_color", hex).apply()
+                                    }
+                                    showBorderColorPicker = false
+                                }
+                            )
                         }
                     }
                 }
@@ -1382,9 +1423,8 @@ fun BordersMarginsDialog(
 
                 // Watermark Text Input
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Add Watermark", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
-                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = watermark,
                         onValueChange = { watermark = it },
@@ -1393,11 +1433,63 @@ fun BordersMarginsDialog(
                         singleLine = true,
                         placeholder = { Text("None") }
                     )
+                    
+                    Text("Watermark Color", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.secondary)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showColorPicker = true }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val currentPreviewColor = try {
+                            Color(android.graphics.Color.parseColor(if (watermarkColorHex.startsWith("#")) watermarkColorHex else "#$watermarkColorHex"))
+                        } catch (e: Exception) {
+                            Color.LightGray
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(currentPreviewColor)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val luminance = currentPreviewColor.red * 0.299f + currentPreviewColor.green * 0.587f + currentPreviewColor.blue * 0.114f
+                            val tint = if (luminance > 0.5f) Color.Black else Color.White
+                            Icon(
+                                Icons.Default.Palette,
+                                contentDescription = "Pick Color",
+                                tint = tint,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text("Choose Custom Color", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text(watermarkColorHex.uppercase(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                        }
+                    }
+
+                    if (showColorPicker) {
+                        ColorPickerDialog(
+                            initialColorHex = watermarkColorHex,
+                            onDismiss = { showColorPicker = false },
+                            onConfirm = { hex, setAsDefault ->
+                                watermarkColorHex = hex
+                                val sharedPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                                if (setAsDefault) {
+                                    sharedPrefs.edit().putString("default_watermark_color", hex).apply()
+                                }
+                                showColorPicker = false
+                            }
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(margin, borderWidth, borderColorHex, grayscale, watermark) }) {
+            Button(onClick = { onConfirm(margin, borderWidth, borderColorHex, grayscale, watermark, watermarkColorHex) }) {
                 Text("Save Settings")
             }
         },
@@ -1898,4 +1990,168 @@ fun EditImageDialog(
             }
         }
     }
+}
+
+@Composable
+fun ColorPickerDialog(
+    initialColorHex: String,
+    onDismiss: () -> Unit,
+    onConfirm: (hex: String, setAsDefault: Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    val initialHsv = remember(initialColorHex) {
+        val c = try { android.graphics.Color.parseColor(initialColorHex) } catch (e: Exception) { android.graphics.Color.GRAY }
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(c, hsv)
+        hsv
+    }
+    
+    var h by remember { mutableFloatStateOf(initialHsv[0]) }
+    var s by remember { mutableFloatStateOf(initialHsv[1]) }
+    var v by remember { mutableFloatStateOf(initialHsv[2]) }
+    var setAsDefault by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = null,
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(h) {
+                                    detectDragGestures { change, _ ->
+                                        change.consume()
+                                        val x = change.position.x.coerceIn(0f, size.width.toFloat())
+                                        val y = change.position.y.coerceIn(0f, size.height.toFloat())
+                                        s = x / size.width.toFloat()
+                                        v = 1f - (y / size.height.toFloat())
+                                    }
+                                }
+                                .pointerInput(h) {
+                                    detectTapGestures { offset ->
+                                        val x = offset.x.coerceIn(0f, size.width.toFloat())
+                                        val y = offset.y.coerceIn(0f, size.height.toFloat())
+                                        s = x / size.width.toFloat()
+                                        v = 1f - (y / size.height.toFloat())
+                                    }
+                                }
+                        ) {
+                            val baseColor = Color(android.graphics.Color.HSVToColor(floatArrayOf(h, 1f, 1f)))
+                            drawRect(color = baseColor)
+                            
+                            val whiteGradient = Brush.horizontalGradient(
+                                colors = listOf(Color.White, Color.Transparent)
+                            )
+                            drawRect(brush = whiteGradient, blendMode = BlendMode.SrcOver)
+                            
+                            val blackGradient = Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black)
+                            )
+                            drawRect(brush = blackGradient, blendMode = BlendMode.SrcOver)
+                            
+                            val cx = s * size.width
+                            val cy = (1f - v) * size.height
+                            drawCircle(
+                                color = Color.White,
+                                radius = 8.dp.toPx(),
+                                center = Offset(cx, cy),
+                                style = Stroke(width = 2.dp.toPx())
+                            )
+                            drawCircle(
+                                color = Color.Black,
+                                radius = 9.dp.toPx(),
+                                center = Offset(cx, cy),
+                                style = Stroke(width = 1.dp.toPx())
+                            )
+                        }
+                    }
+                    
+                    Box(
+                        modifier = Modifier
+                            .width(30.dp)
+                            .fillMaxHeight()
+                    ) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectDragGestures { change, _ ->
+                                        change.consume()
+                                        val y = change.position.y.coerceIn(0f, size.height.toFloat())
+                                        h = (y / size.height.toFloat()) * 360f
+                                    }
+                                }
+                                .pointerInput(Unit) {
+                                    detectTapGestures { offset ->
+                                        val y = offset.y.coerceIn(0f, size.height.toFloat())
+                                        h = (y / size.height.toFloat()) * 360f
+                                    }
+                                }
+                        ) {
+                            val hueColors = List(360) { Color(android.graphics.Color.HSVToColor(floatArrayOf(it.toFloat(), 1f, 1f))) }
+                            val hueGradient = Brush.verticalGradient(hueColors)
+                            drawRect(brush = hueGradient)
+                            
+                            val hy = (h / 360f) * size.height
+                            drawRect(
+                                color = Color.White,
+                                topLeft = Offset(0f, hy - 2.dp.toPx()),
+                                size = Size(size.width, 4.dp.toPx()),
+                                style = Stroke(width = 1.dp.toPx())
+                            )
+                            drawRect(
+                                color = Color.Black,
+                                topLeft = Offset(0f, hy - 3.dp.toPx()),
+                                size = Size(size.width, 6.dp.toPx()),
+                                style = Stroke(width = 1.dp.toPx())
+                            )
+                        }
+                    }
+                }
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { setAsDefault = !setAsDefault }
+                ) {
+                    Checkbox(
+                        checked = setAsDefault,
+                        onCheckedChange = { setAsDefault = it }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Set as default")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val colorInt = android.graphics.Color.HSVToColor(floatArrayOf(h, s, v))
+                    val hex = String.format("#%06X", 0xFFFFFF and colorInt)
+                    onConfirm(hex, setAsDefault)
+                }
+            ) {
+                Text("OK", color = Color(0xFF00BFA5), fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("CANCEL", color = Color(0xFF00BFA5), fontWeight = FontWeight.Bold)
+            }
+        }
+    )
 }

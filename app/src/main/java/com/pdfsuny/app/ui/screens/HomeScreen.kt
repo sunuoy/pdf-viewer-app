@@ -67,7 +67,19 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Copyright
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.TextStyle
 
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -186,6 +198,21 @@ fun HomeScreen(
     var watermarkRotation by remember { mutableStateOf(45f) }
     var watermarkColorStr by remember { mutableStateOf("gray") }
     var watermarkOpacity by remember { mutableStateOf(0.3f) }
+
+    // Signature State
+    var showSignatureDialog by remember { mutableStateOf(false) }
+    val signaturePaths = remember { mutableStateListOf<List<Offset>>() }
+    var signaturePageOption by remember { mutableStateOf("last") }
+    var signatureAlignment by remember { mutableStateOf("bottom_right") }
+
+    // Stamp State
+    var showStampDialog by remember { mutableStateOf(false) }
+    var stampText by remember { mutableStateOf("APPROVED") }
+    var stampTypeTab by remember { mutableStateOf(0) }
+    var stampColorStr by remember { mutableStateOf("red") }
+    var stampAlignment by remember { mutableStateOf("center") }
+    var stampPageOption by remember { mutableStateOf("first") }
+    var importedStampUri by remember { mutableStateOf<Uri?>(null) }
 
 
     var showAboutDialog by remember { mutableStateOf(false) }
@@ -386,6 +413,12 @@ fun HomeScreen(
         }
     }
     
+    val stampImagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        importedStampUri = uri
+    }
+
     val saveEditorFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*")
     ) { destUri: Uri? ->
@@ -881,6 +914,270 @@ fun HomeScreen(
                                 generatedMimeType = "application/pdf"
                             }
                         }
+                        EditorTool.ADD_SIGNATURE -> {
+                            processingMessage = "Applying signature to PDF..."
+                            withContext(Dispatchers.IO) {
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
+                                    }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+                                
+                                val sigWidth = 400
+                                val sigHeight = 150
+                                val bitmap = android.graphics.Bitmap.createBitmap(sigWidth, sigHeight, android.graphics.Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(bitmap)
+                                bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
+                                
+                                val paint = android.graphics.Paint().apply {
+                                    color = android.graphics.Color.BLACK
+                                    strokeWidth = 6f
+                                    style = android.graphics.Paint.Style.STROKE
+                                    isAntiAlias = true
+                                    strokeCap = android.graphics.Paint.Cap.ROUND
+                                    strokeJoin = android.graphics.Paint.Join.ROUND
+                                }
+                                
+                                if (signaturePaths.isNotEmpty()) {
+                                    var minX = Float.MAX_VALUE
+                                    var maxX = Float.MIN_VALUE
+                                    var minY = Float.MAX_VALUE
+                                    var maxY = Float.MIN_VALUE
+                                    signaturePaths.forEach { path ->
+                                        path.forEach { pt ->
+                                            if (pt.x < minX) minX = pt.x
+                                            if (pt.x > maxX) maxX = pt.x
+                                            if (pt.y < minY) minY = pt.y
+                                            if (pt.y > maxY) maxY = pt.y
+                                        }
+                                    }
+                                    
+                                    val pathW = maxX - minX
+                                    val pathH = maxY - minY
+                                    if (pathW > 0f && pathH > 0f) {
+                                        val scaleX = 360f / pathW
+                                        val scaleY = 120f / pathH
+                                        val scale = Math.min(scaleX, scaleY)
+                                        
+                                        val offsetX = 20f - minX * scale + (360f - pathW * scale) / 2f
+                                        val offsetY = 20f - minY * scale + (120f - pathH * scale) / 2f
+                                        
+                                        signaturePaths.forEach { path ->
+                                            if (path.size > 1) {
+                                                val androidPath = android.graphics.Path()
+                                                androidPath.moveTo(path[0].x * scale + offsetX, path[0].y * scale + offsetY)
+                                                for (i in 1 until path.size) {
+                                                    androidPath.lineTo(path[i].x * scale + offsetX, path[i].y * scale + offsetY)
+                                                }
+                                                canvas.drawPath(androidPath, paint)
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                openInputStream(inputUri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input)
+                                    val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
+                                    
+                                    val totalPages = document.numberOfPages
+                                    val targetIndices = when (signaturePageOption) {
+                                        "first" -> listOf(0)
+                                        "all" -> (0 until totalPages).toList()
+                                        else -> listOf(totalPages - 1)
+                                    }
+                                    
+                                    for (idx in targetIndices) {
+                                        if (idx in 0 until totalPages) {
+                                            val page = document.getPage(idx)
+                                            val mediaBox = page.mediaBox
+                                            
+                                            val w = 120f
+                                            val h = 45f
+                                            val margin = 30f
+                                            
+                                            val x = when (signatureAlignment) {
+                                                "bottom_left" -> margin
+                                                "bottom_center" -> (mediaBox.width - w) / 2f
+                                                else -> mediaBox.width - w - margin
+                                            }
+                                            val y = margin
+                                            
+                                            val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
+                                                document,
+                                                page,
+                                                com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND,
+                                                true,
+                                                true
+                                            )
+                                            contentStream.drawImage(pdImage, x, y, w, h)
+                                            contentStream.close()
+                                        }
+                                    }
+                                    
+                                    openOutputStream(targetUri)?.use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
+                                }
+                                bitmap.recycle()
+                                processedFileUri = targetUri
+                                generatedMimeType = "application/pdf"
+                            }
+                        }
+                        EditorTool.ADD_STAMP -> {
+                            processingMessage = "Applying stamp to PDF..."
+                            withContext(Dispatchers.IO) {
+                                val openInputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileInputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openInputStream(uri)
+                                    }
+                                }
+                                val openOutputStream = { uri: Uri ->
+                                    if (uri.scheme == "file") {
+                                        java.io.FileOutputStream(java.io.File(uri.path ?: ""))
+                                    } else {
+                                        context.contentResolver.openOutputStream(uri)
+                                    }
+                                }
+                                
+                                val stampWidth = 240
+                                val stampHeight = 100
+                                val bitmap = android.graphics.Bitmap.createBitmap(stampWidth, stampHeight, android.graphics.Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(bitmap)
+                                bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
+                                
+                                if (stampTypeTab == 1 && importedStampUri != null) {
+                                    try {
+                                        context.contentResolver.openInputStream(importedStampUri!!)?.use { imgIn ->
+                                            val options = android.graphics.BitmapFactory.Options().apply {
+                                                inJustDecodeBounds = false
+                                            }
+                                            val loadedBmp = android.graphics.BitmapFactory.decodeStream(imgIn, null, options)
+                                            if (loadedBmp != null) {
+                                                val srcW = loadedBmp.width
+                                                val srcH = loadedBmp.height
+                                                val scaleX = 240f / srcW
+                                                val scaleY = 100f / srcH
+                                                val scale = Math.min(scaleX, scaleY)
+                                                val destW = (srcW * scale).toInt()
+                                                val destH = (srcH * scale).toInt()
+                                                val scaledBmp = android.graphics.Bitmap.createScaledBitmap(loadedBmp, destW, destH, true)
+                                                
+                                                canvas.drawBitmap(
+                                                    scaledBmp,
+                                                    (240 - destW) / 2f,
+                                                    (100 - destH) / 2f,
+                                                    null
+                                                )
+                                                scaledBmp.recycle()
+                                                loadedBmp.recycle()
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("HomeScreen", "Error loading imported stamp image", e)
+                                    }
+                                } else {
+                                    val color = when (stampColorStr) {
+                                        "blue" -> android.graphics.Color.BLUE
+                                        "green" -> android.graphics.Color.rgb(46, 125, 50)
+                                        else -> android.graphics.Color.RED
+                                    }
+                                    
+                                    val strokePaint = android.graphics.Paint().apply {
+                                        this.color = color
+                                        style = android.graphics.Paint.Style.STROKE
+                                        strokeWidth = 6f
+                                        isAntiAlias = true
+                                    }
+                                    
+                                    val fillPaint = android.graphics.Paint().apply {
+                                        this.color = color
+                                        alpha = 25
+                                        style = android.graphics.Paint.Style.FILL
+                                    }
+                                    
+                                    val rect = android.graphics.RectF(10f, 10f, 230f, 90f)
+                                    canvas.drawRoundRect(rect, 15f, 15f, fillPaint)
+                                    canvas.drawRoundRect(rect, 15f, 15f, strokePaint)
+                                    
+                                    val textPaint = android.graphics.Paint().apply {
+                                        this.color = color
+                                        textSize = 28f
+                                        isAntiAlias = true
+                                        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                                        textAlign = android.graphics.Paint.Align.CENTER
+                                    }
+                                    
+                                    val textY = 50f - (textPaint.descent() + textPaint.ascent()) / 2f
+                                    canvas.drawText(stampText.uppercase(), 120f, textY, textPaint)
+                                }
+                                
+                                openInputStream(inputUri)?.use { input ->
+                                    val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(input)
+                                    val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
+                                    
+                                    val totalPages = document.numberOfPages
+                                    val targetIndices = when (stampPageOption) {
+                                        "last" -> listOf(totalPages - 1)
+                                        "all" -> (0 until totalPages).toList()
+                                        else -> listOf(0)
+                                    }
+                                    
+                                    for (idx in targetIndices) {
+                                        if (idx in 0 until totalPages) {
+                                            val page = document.getPage(idx)
+                                            val mediaBox = page.mediaBox
+                                            
+                                            val w = 140f
+                                            val h = 58f
+                                            val margin = 40f
+                                            
+                                            val x = when (stampAlignment) {
+                                                "bottom_left" -> margin
+                                                "bottom_right" -> mediaBox.width - w - margin
+                                                "top_left" -> margin
+                                                "top_right" -> mediaBox.width - w - margin
+                                                else -> (mediaBox.width - w) / 2f
+                                            }
+                                            val y = when (stampAlignment) {
+                                                "top_left", "top_right" -> mediaBox.height - h - margin
+                                                "bottom_left", "bottom_right" -> margin
+                                                else -> (mediaBox.height - h) / 2f
+                                            }
+                                            
+                                            val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
+                                                document,
+                                                page,
+                                                com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND,
+                                                true,
+                                                true
+                                            )
+                                            contentStream.drawImage(pdImage, x, y, w, h)
+                                            contentStream.close()
+                                        }
+                                    }
+                                    
+                                    openOutputStream(targetUri)?.use { output ->
+                                        document.save(output)
+                                    }
+                                    document.close()
+                                }
+                                bitmap.recycle()
+                                processedFileUri = targetUri
+                                generatedMimeType = "application/pdf"
+                            }
+                        }
                         else -> {}
                     }
 
@@ -957,6 +1254,12 @@ fun HomeScreen(
                     } else if (tool == EditorTool.ADD_WATERMARK) {
                         watermarkText = "CONFIDENTIAL"
                         showAddWatermarkDialog = true
+                    } else if (tool == EditorTool.ADD_SIGNATURE) {
+                        signaturePaths.clear()
+                        showSignatureDialog = true
+                    } else if (tool == EditorTool.ADD_STAMP) {
+                        importedStampUri = null
+                        showStampDialog = true
                     } else if (tool == EditorTool.REMOVE_PASSWORD) {
                         isProcessing = true
                         processingMessage = "Checking PDF encryption status..."
@@ -1399,7 +1702,7 @@ fun HomeScreen(
             ) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Document Tools & Icons",
+                    text = "Document Tools",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 14.dp),
@@ -1490,14 +1793,28 @@ fun HomeScreen(
                         description = "Overlay custom text watermark",
                         icon = Icons.Default.Copyright,
                         gradientColors = listOf(Color(0xFF6A1B9A), Color(0xFFBA68C8))
+                    ),
+                    EditorToolItem(
+                        tool = EditorTool.ADD_SIGNATURE,
+                        title = "Signature",
+                        description = "Add handwritten digital signature",
+                        icon = Icons.Default.Edit,
+                        gradientColors = listOf(Color(0xFF004D40), Color(0xFF00BFA5))
+                    ),
+                    EditorToolItem(
+                        tool = EditorTool.ADD_STAMP,
+                        title = "Stamp",
+                        description = "Add custom stamp approval or logo",
+                        icon = Icons.Default.Check,
+                        gradientColors = listOf(Color(0xFF880E4F), Color(0xFFFF4081))
                     )
                 )
 
                 
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    columns = GridCells.Fixed(3),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
                     items(tools) { item ->
@@ -1517,8 +1834,8 @@ fun HomeScreen(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(160.dp),
-                            shape = RoundedCornerShape(20.dp),
+                                .height(130.dp),
+                            shape = RoundedCornerShape(16.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surface
                             ),
@@ -1528,12 +1845,12 @@ fun HomeScreen(
                                 Column(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(14.dp),
-                                    verticalArrangement = Arrangement.SpaceBetween
+                                        .padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Surface(
-                                        modifier = Modifier.size(46.dp),
-                                        shape = RoundedCornerShape(14.dp),
+                                        modifier = Modifier.size(36.dp),
+                                        shape = RoundedCornerShape(10.dp),
                                         color = Color.Transparent
                                     ) {
                                         Box(
@@ -1546,7 +1863,7 @@ fun HomeScreen(
                                                 imageVector = item.icon,
                                                 contentDescription = null,
                                                 tint = Color.White,
-                                                modifier = Modifier.size(24.dp)
+                                                modifier = Modifier.size(20.dp)
                                             )
                                         }
                                     }
@@ -1554,19 +1871,21 @@ fun HomeScreen(
                                     Column {
                                         Text(
                                             text = item.title,
-                                            style = MaterialTheme.typography.titleMedium,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontSize = 15.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
+                                            maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = item.description,
-                                            style = MaterialTheme.typography.bodySmall,
+                                            style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 2,
-                                            lineHeight = 15.sp,
+                                            fontSize = 11.sp,
+                                            lineHeight = 14.sp,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
@@ -1576,7 +1895,7 @@ fun HomeScreen(
                                     Surface(
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
-                                            .padding(top = 10.dp, end = 10.dp),
+                                            .padding(top = 6.dp, end = 6.dp),
                                         shape = CircleShape,
                                         color = MaterialTheme.colorScheme.primary
                                     ) {
@@ -1585,7 +1904,8 @@ fun HomeScreen(
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                            fontSize = 8.sp
                                         )
                                     }
                                 }
@@ -2228,6 +2548,410 @@ fun HomeScreen(
                 TextButton(
                     onClick = {
                         showAddWatermarkDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Signature Dialog
+    if (showSignatureDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showSignatureDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Text("Sign PDF Document", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Draw your signature inside the box below:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.White)
+                            .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
+                    ) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            signaturePaths.add(listOf(offset))
+                                        },
+                                        onDrag = { change, _ ->
+                                            change.consume()
+                                            if (signaturePaths.isNotEmpty()) {
+                                                val lastPath = signaturePaths.last()
+                                                signaturePaths[signaturePaths.size - 1] = lastPath + change.position
+                                            }
+                                        }
+                                    )
+                                }
+                        ) {
+                            signaturePaths.forEach { path ->
+                                if (path.size > 1) {
+                                    val drawPath = Path()
+                                    drawPath.moveTo(path[0].x, path[0].y)
+                                    for (i in 1 until path.size) {
+                                        drawPath.lineTo(path[i].x, path[i].y)
+                                    }
+                                    drawPath(
+                                        path = drawPath,
+                                        color = Color.Black,
+                                        style = Stroke(
+                                            width = 4.dp.toPx(),
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        
+                        TextButton(
+                            onClick = { signaturePaths.clear() },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(4.dp)
+                        ) {
+                            Text("Clear", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    
+                    Text("Select Target Pages:", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val placementOptions = listOf(
+                            "last" to "Last Page",
+                            "first" to "First Page",
+                            "all" to "All Pages"
+                        )
+                        placementOptions.forEach { (optionId, label) ->
+                            val isSelected = signaturePageOption == optionId
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { signaturePageOption = optionId }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                    
+                    Text("Position Alignment:", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val alignmentOptions = listOf(
+                            "bottom_left" to "Left",
+                            "bottom_center" to "Center",
+                            "bottom_right" to "Right"
+                        )
+                        alignmentOptions.forEach { (alignId, label) ->
+                            val isSelected = signatureAlignment == alignId
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { signatureAlignment = alignId }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (signaturePaths.isEmpty()) {
+                            Toast.makeText(context, "Please sign on the pad first", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val baseName = originalName.substringBeforeLast(".")
+                            showSignatureDialog = false
+                            saveEditorFileLauncher.launch("${baseName}_signed.pdf")
+                        }
+                    }
+                ) {
+                    Text("Apply Signature")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSignatureDialog = false
+                        selectedInputUri = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Stamp Dialog
+    if (showStampDialog && selectedInputUri != null) {
+        val originalName = getFileName(context, selectedInputUri!!) ?: "document.pdf"
+        AlertDialog(
+            onDismissRequest = {
+                showStampDialog = false
+                selectedInputUri = null
+            },
+            title = {
+                Text("Add Stamp to PDF", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    TabRow(
+                        selectedTabIndex = stampTypeTab,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Tab(
+                            selected = stampTypeTab == 0,
+                            onClick = { stampTypeTab = 0 },
+                            text = { Text("Text Stamp", style = MaterialTheme.typography.bodyMedium) }
+                        )
+                        Tab(
+                            selected = stampTypeTab == 1,
+                            onClick = { stampTypeTab = 1 },
+                            text = { Text("Image Stamp", style = MaterialTheme.typography.bodyMedium) }
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    
+                    if (stampTypeTab == 0) {
+                        Text("Stamp Text:", style = MaterialTheme.typography.titleSmall)
+                        OutlinedTextField(
+                            value = stampText,
+                            onValueChange = { stampText = it },
+                            placeholder = { Text("e.g., APPROVED") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = TextStyle(fontWeight = FontWeight.Bold)
+                        )
+                        
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val presets = listOf("APPROVED", "REJECTED", "DRAFT", "CONFIDENTIAL")
+                            presets.forEach { preset ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { stampText = preset }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = preset,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        
+                        Text("Stamp Color:", style = MaterialTheme.typography.titleSmall)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val colorsList = listOf(
+                                "red" to ("Red" to Color.Red),
+                                "blue" to ("Blue" to Color.Blue),
+                                "green" to ("Green" to Color(0xFF2E7D32))
+                            )
+                            colorsList.forEach { (colorId, pair) ->
+                                val (label, displayColor) = pair
+                                val isSelected = stampColorStr == colorId
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { stampColorStr = colorId }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .background(displayColor, CircleShape)
+                                                .border(1.5.dp, Color.White, CircleShape)
+                                        )
+                                        Text(
+                                            text = label,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text("Import Stamp Graphic:", style = MaterialTheme.typography.titleSmall)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
+                                .clickable { stampImagePicker.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (importedStampUri != null) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = Color(0xFF2E7D32))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Image Selected", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text("Tap to change", style = MaterialTheme.typography.bodySmall, fontSize = 10.sp)
+                                }
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Select from Gallery", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                    
+                    Text("Target Pages:", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val placementOptions = listOf(
+                            "first" to "First Page",
+                            "last" to "Last Page",
+                            "all" to "All Pages"
+                        )
+                        placementOptions.forEach { (optionId, label) ->
+                            val isSelected = stampPageOption == optionId
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { stampPageOption = optionId }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                    
+                    Text("Position Alignment:", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val alignmentOptions = listOf(
+                            "top_left" to "Top L",
+                            "top_right" to "Top R",
+                            "center" to "Center",
+                            "bottom_left" to "Bot L",
+                            "bottom_right" to "Bot R"
+                        )
+                        alignmentOptions.forEach { (alignId, label) ->
+                            val isSelected = stampAlignment == alignId
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable { stampAlignment = alignId }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (stampTypeTab == 0 && stampText.isBlank()) {
+                            Toast.makeText(context, "Stamp text cannot be empty", Toast.LENGTH_SHORT).show()
+                        } else if (stampTypeTab == 1 && importedStampUri == null) {
+                            Toast.makeText(context, "Please select an image stamp first", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val baseName = originalName.substringBeforeLast(".")
+                            showStampDialog = false
+                            saveEditorFileLauncher.launch("${baseName}_stamped.pdf")
+                        }
+                    }
+                ) {
+                    Text("Apply Stamp")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showStampDialog = false
                         selectedInputUri = null
                     }
                 ) {
@@ -2961,7 +3685,9 @@ enum class EditorTool {
     IMAGES_TO_PDF,
     ADD_PASSWORD,
     REMOVE_PASSWORD,
-    ADD_WATERMARK
+    ADD_WATERMARK,
+    ADD_SIGNATURE,
+    ADD_STAMP
 }
 
 

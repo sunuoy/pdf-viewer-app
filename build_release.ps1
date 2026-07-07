@@ -41,8 +41,7 @@ if ($versionParts.Length -ne 3) {
 
 if ($Type -eq "major") {
     $major = $major + 1
-    $minor = 0
-    $patch = 0
+    $patch = $patch + 1
 } elseif ($Type -eq "minor") {
     $minor = $minor + 1
     $patch = 0

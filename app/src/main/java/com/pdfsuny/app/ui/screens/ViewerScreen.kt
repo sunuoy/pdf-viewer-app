@@ -74,6 +74,14 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.ui.text.TextStyle
+import android.graphics.PointF
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -100,6 +108,8 @@ import com.pdfsuny.app.ui.components.TooltipIconButton
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.pdfsuny.app.services.AutoScrollMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -320,6 +330,32 @@ fun PdfViewerScreen(
     var wordToFind by remember { mutableStateOf("") }
     var replacementText by remember { mutableStateOf("") }
     var isPdfEditorSaving by remember { mutableStateOf(false) }
+
+    // Viewer Signature states
+    var showSignatureDialog by remember { mutableStateOf(false) }
+    val signaturePaths = remember { mutableStateListOf<List<Offset>>() }
+    var signatureAlignment by remember { mutableStateOf("bottom_right") }
+    var sigInkR by remember { mutableIntStateOf(0) }
+    var sigInkG by remember { mutableIntStateOf(0) }
+    var sigInkB by remember { mutableIntStateOf(0) }
+    var sigInkHexText by remember { mutableStateOf("#000000") }
+
+    // Viewer Stamp states
+    var showStampDialog by remember { mutableStateOf(false) }
+    var stampText by remember { mutableStateOf("APPROVED") }
+    var stampTypeTab by remember { mutableStateOf(0) }
+    var stampAlignment by remember { mutableStateOf("center") }
+    var stampImageUri by remember { mutableStateOf<Uri?>(null) }
+    var stampR by remember { mutableIntStateOf(255) }
+    var stampG by remember { mutableIntStateOf(0) }
+    var stampB by remember { mutableIntStateOf(0) }
+    var stampHexText by remember { mutableStateOf("#FF0000") }
+
+    val stampImagePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        stampImageUri = uri
+    }
     var pdfReloadTrigger by remember { mutableStateOf(0) }
 
     var activeSubPage by remember { mutableStateOf(ViewerSubPage.NONE) }
@@ -1242,6 +1278,24 @@ fun PdfViewerScreen(
                                             isPdfWordEditorOpen = true
                                         },
                                         leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Add Signature") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            signaturePaths.clear()
+                                            showSignatureDialog = true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Add Stamp") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            stampImageUri = null
+                                            showStampDialog = true
+                                        },
+                                        leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) }
                                     )
                                 }
                                 DropdownMenuItem(
@@ -3748,6 +3802,522 @@ fun PdfViewerScreen(
                                 replacementText = ""
                             },
                             enabled = !isPdfEditorSaving
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
+            // PDF Direct Signature Dialog
+            if (showSignatureDialog) {
+                var isSigSaving by remember { mutableStateOf(false) }
+                AlertDialog(
+                    onDismissRequest = {
+                        if (!isSigSaving) {
+                            showSignatureDialog = false
+                        }
+                    },
+                    title = {
+                        Text("Add Manual Signature", fontWeight = FontWeight.Bold)
+                    },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = "Draw your signature on the pad below:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(150.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color.White)
+                                    .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
+                            ) {
+                                Canvas(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .pointerInput(Unit) {
+                                            detectDragGestures(
+                                                onDragStart = { offset ->
+                                                    signaturePaths.add(listOf(offset))
+                                                },
+                                                onDrag = { change, _ ->
+                                                    change.consume()
+                                                    if (signaturePaths.isNotEmpty()) {
+                                                        val lastPath = signaturePaths.last()
+                                                        signaturePaths[signaturePaths.size - 1] = lastPath + change.position
+                                                    }
+                                                }
+                                            )
+                                        }
+                                ) {
+                                    signaturePaths.forEach { path ->
+                                        if (path.size > 1) {
+                                            val drawPath = Path()
+                                            drawPath.moveTo(path[0].x, path[0].y)
+                                            for (i in 1 until path.size) {
+                                                drawPath.lineTo(path[i].x, path[i].y)
+                                            }
+                                            drawPath(
+                                                path = drawPath,
+                                                color = Color(0xFF000000.toInt() or (sigInkR shl 16) or (sigInkG shl 8) or sigInkB),
+                                                style = Stroke(
+                                                    width = 4.dp.toPx(),
+                                                    cap = StrokeCap.Round,
+                                                    join = StrokeJoin.Round
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                                
+                                TextButton(
+                                    onClick = { signaturePaths.clear() },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(4.dp)
+                                ) {
+                                    Text("Clear", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            
+                            Text("Ink Color (Manual Picker):", style = MaterialTheme.typography.titleSmall)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                val sigColorPreview = Color(0xFF000000.toInt() or (sigInkR shl 16) or (sigInkG shl 8) or sigInkB)
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(sigColorPreview)
+                                        .border(1.5.dp, Color.White, CircleShape)
+                                )
+                                
+                                OutlinedTextField(
+                                    value = sigInkHexText,
+                                    onValueChange = { input ->
+                                        sigInkHexText = input
+                                        val cleaned = input.removePrefix("#").trim()
+                                        if (cleaned.length == 6) {
+                                            try {
+                                                val parsed = cleaned.toLong(16).toInt()
+                                                sigInkR = (parsed ushr 16) and 0xFF
+                                                sigInkG = (parsed ushr 8) and 0xFF
+                                                sigInkB = parsed and 0xFF
+                                            } catch (e: Exception) {}
+                                        }
+                                    },
+                                    label = { Text("Hex Color") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    textStyle = TextStyle(fontSize = 12.sp)
+                                )
+                            }
+                            
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("R: $sigInkR", color = Color.Red, modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Slider(
+                                        value = sigInkR.toFloat(),
+                                        onValueChange = {
+                                            sigInkR = it.toInt()
+                                            sigInkHexText = String.format("#%02X%02X%02X", sigInkR, sigInkG, sigInkB)
+                                        },
+                                        valueRange = 0f..255f,
+                                        modifier = Modifier.weight(1f),
+                                        colors = SliderDefaults.colors(activeTrackColor = Color.Red)
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("G: $sigInkG", color = Color(0xFF2E7D32), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Slider(
+                                        value = sigInkG.toFloat(),
+                                        onValueChange = {
+                                            sigInkG = it.toInt()
+                                            sigInkHexText = String.format("#%02X%02X%02X", sigInkR, sigInkG, sigInkB)
+                                        },
+                                        valueRange = 0f..255f,
+                                        modifier = Modifier.weight(1f),
+                                        colors = SliderDefaults.colors(activeTrackColor = Color(0xFF2E7D32))
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("B: $sigInkB", color = Color.Blue, modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Slider(
+                                        value = sigInkB.toFloat(),
+                                        onValueChange = {
+                                            sigInkB = it.toInt()
+                                            sigInkHexText = String.format("#%02X%02X%02X", sigInkR, sigInkG, sigInkB)
+                                        },
+                                        valueRange = 0f..255f,
+                                        modifier = Modifier.weight(1f),
+                                        colors = SliderDefaults.colors(activeTrackColor = Color.Blue)
+                                    )
+                                }
+                            }
+                            
+                            Text("Position Alignment:", style = MaterialTheme.typography.titleSmall)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                val alignmentOptions = listOf(
+                                    "bottom_left" to "Left",
+                                    "bottom_center" to "Center",
+                                    "bottom_right" to "Right"
+                                )
+                                alignmentOptions.forEach { (alignId, label) ->
+                                    val isSelected = signatureAlignment == alignId
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                            .clickable { signatureAlignment = alignId }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isSigSaving) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            } else {
+                                Button(
+                                    onClick = {
+                                        if (signaturePaths.isEmpty()) {
+                                            Toast.makeText(context, "Please sign on the pad first", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            isSigSaving = true
+                                            scope.launch {
+                                                val pointPaths = signaturePaths.map { path ->
+                                                    path.map { PointF(it.x, it.y) }
+                                                }
+                                                val argbColor = (0xFF shl 24) or (sigInkR shl 16) or (sigInkG shl 8) or sigInkB
+                                                val success = pdfTextService.addSignatureOnPage(
+                                                    context = context,
+                                                    uri = Uri.parse(pdfPath),
+                                                    pageIndex = currentPageIndex,
+                                                    signaturePaths = pointPaths,
+                                                    alignment = signatureAlignment,
+                                                    inkColor = argbColor
+                                                )
+                                                isSigSaving = false
+                                                if (success) {
+                                                    Toast.makeText(context, "Signature applied successfully!", Toast.LENGTH_SHORT).show()
+                                                    bitmapCache.evictAll()
+                                                    pdfReloadTrigger++
+                                                    showSignatureDialog = false
+                                                } else {
+                                                    Toast.makeText(context, "Failed to apply signature.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Text("Apply")
+                                }
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                showSignatureDialog = false
+                            },
+                            enabled = !isSigSaving
+                        ) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
+            // PDF Direct Stamp Dialog
+            if (showStampDialog) {
+                var isStampSaving by remember { mutableStateOf(false) }
+                AlertDialog(
+                    onDismissRequest = {
+                        if (!isStampSaving) {
+                            showStampDialog = false
+                        }
+                    },
+                    title = {
+                        Text("Add Manual Stamp", fontWeight = FontWeight.Bold)
+                    },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                        ) {
+                            TabRow(
+                                selectedTabIndex = stampTypeTab,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Tab(
+                                    selected = stampTypeTab == 0,
+                                    onClick = { stampTypeTab = 0 },
+                                    text = { Text("Text Stamp", style = MaterialTheme.typography.bodyMedium) }
+                                )
+                                Tab(
+                                    selected = stampTypeTab == 1,
+                                    onClick = { stampTypeTab = 1 },
+                                    text = { Text("Image Stamp", style = MaterialTheme.typography.bodyMedium) }
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(4.dp))
+                            
+                            if (stampTypeTab == 0) {
+                                Text("Stamp Text:", style = MaterialTheme.typography.titleSmall)
+                                OutlinedTextField(
+                                    value = stampText,
+                                    onValueChange = { stampText = it },
+                                    placeholder = { Text("e.g., APPROVED") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = TextStyle(fontWeight = FontWeight.Bold)
+                                )
+                                
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val presets = listOf("APPROVED", "REJECTED", "DRAFT", "CONFIDENTIAL")
+                                    presets.forEach { preset ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                .clickable { stampText = preset }
+                                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                        ) {
+                                            Text(
+                                                text = preset,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                                
+                                Text("Stamp Color (Manual Picker):", style = MaterialTheme.typography.titleSmall)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val stampColorPreview = Color(0xFF000000.toInt() or (stampR shl 16) or (stampG shl 8) or stampB)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(stampColorPreview)
+                                            .border(1.5.dp, Color.White, CircleShape)
+                                    )
+                                    
+                                    OutlinedTextField(
+                                        value = stampHexText,
+                                        onValueChange = { input ->
+                                            stampHexText = input
+                                            val cleaned = input.removePrefix("#").trim()
+                                            if (cleaned.length == 6) {
+                                                try {
+                                                    val parsed = cleaned.toLong(16).toInt()
+                                                    stampR = (parsed ushr 16) and 0xFF
+                                                    stampG = (parsed ushr 8) and 0xFF
+                                                    stampB = parsed and 0xFF
+                                                } catch (e: Exception) {}
+                                            }
+                                        },
+                                        label = { Text("Hex Color") },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                        textStyle = TextStyle(fontSize = 12.sp)
+                                    )
+                                }
+                                
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("R: $stampR", color = Color.Red, modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        Slider(
+                                            value = stampR.toFloat(),
+                                            onValueChange = {
+                                                stampR = it.toInt()
+                                                stampHexText = String.format("#%02X%02X%02X", stampR, stampG, stampB)
+                                            },
+                                            valueRange = 0f..255f,
+                                            modifier = Modifier.weight(1f),
+                                            colors = SliderDefaults.colors(activeTrackColor = Color.Red)
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("G: $stampG", color = Color(0xFF2E7D32), modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        Slider(
+                                            value = stampG.toFloat(),
+                                            onValueChange = {
+                                                stampG = it.toInt()
+                                                stampHexText = String.format("#%02X%02X%02X", stampR, stampG, stampB)
+                                            },
+                                            valueRange = 0f..255f,
+                                            modifier = Modifier.weight(1f),
+                                            colors = SliderDefaults.colors(activeTrackColor = Color(0xFF2E7D32))
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("B: $stampB", color = Color.Blue, modifier = Modifier.width(42.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        Slider(
+                                            value = stampB.toFloat(),
+                                            onValueChange = {
+                                                stampB = it.toInt()
+                                                stampHexText = String.format("#%02X%02X%02X", stampR, stampG, stampB)
+                                            },
+                                            valueRange = 0f..255f,
+                                            modifier = Modifier.weight(1f),
+                                            colors = SliderDefaults.colors(activeTrackColor = Color.Blue)
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text("Import Stamp Graphic:", style = MaterialTheme.typography.titleSmall)
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(120.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
+                                        .clickable { stampImagePicker.launch("image/*") },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (stampImageUri != null) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(imageVector = Icons.Default.Check, contentDescription = null, tint = Color(0xFF2E7D32))
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text("Image Selected", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            Text("Tap to change", style = MaterialTheme.typography.bodySmall, fontSize = 10.sp)
+                                        }
+                                    } else {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(imageVector = Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text("Select from Gallery", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Text("Position Alignment:", style = MaterialTheme.typography.titleSmall)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                val alignmentOptions = listOf(
+                                    "top_left" to "Top L",
+                                    "top_right" to "Top R",
+                                    "center" to "Center",
+                                    "bottom_left" to "Bot L",
+                                    "bottom_right" to "Bot R"
+                                )
+                                alignmentOptions.forEach { (alignId, label) ->
+                                    val isSelected = stampAlignment == alignId
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                            .clickable { stampAlignment = alignId }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isStampSaving) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            } else {
+                                Button(
+                                    onClick = {
+                                        if (stampTypeTab == 0 && stampText.isBlank()) {
+                                            Toast.makeText(context, "Stamp text cannot be empty", Toast.LENGTH_SHORT).show()
+                                        } else if (stampTypeTab == 1 && stampImageUri == null) {
+                                            Toast.makeText(context, "Please select an image stamp first", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            isStampSaving = true
+                                            scope.launch {
+                                                val argbColor = (0xFF shl 24) or (stampR shl 16) or (stampG shl 8) or stampB
+                                                val success = pdfTextService.addStampOnPage(
+                                                    context = context,
+                                                    uri = Uri.parse(pdfPath),
+                                                    pageIndex = currentPageIndex,
+                                                    stampType = stampTypeTab,
+                                                    stampText = stampText,
+                                                    stampColor = argbColor,
+                                                    importedImageUri = stampImageUri,
+                                                    alignment = stampAlignment
+                                                )
+                                                isStampSaving = false
+                                                if (success) {
+                                                    Toast.makeText(context, "Stamp applied successfully!", Toast.LENGTH_SHORT).show()
+                                                    bitmapCache.evictAll()
+                                                    pdfReloadTrigger++
+                                                    showStampDialog = false
+                                                } else {
+                                                    Toast.makeText(context, "Failed to apply stamp.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Text("Apply")
+                                }
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                showStampDialog = false
+                            },
+                            enabled = !isStampSaving
                         ) {
                             Text("Cancel")
                         }

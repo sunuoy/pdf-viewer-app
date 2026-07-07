@@ -521,4 +521,287 @@ class PdfTextService {
         }
         return@withContext false
     }
+
+    suspend fun addSignatureOnPage(
+        context: Context,
+        uri: Uri,
+        pageIndex: Int,
+        signaturePaths: List<List<android.graphics.PointF>>,
+        alignment: String,
+        inkColor: Int
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (signaturePaths.isEmpty()) return@withContext false
+        
+        var document: PDDocument? = null
+        var inputStream: java.io.InputStream? = null
+        val tempFile = java.io.File(context.cacheDir, "temp_sig_${System.currentTimeMillis()}.pdf")
+        
+        try {
+            inputStream = openInputStream(context, uri)
+            if (inputStream == null) return@withContext false
+            document = PDDocument.load(inputStream)
+            if (pageIndex < 0 || pageIndex >= document.numberOfPages) return@withContext false
+            
+            val page = document.getPage(pageIndex)
+            val mediaBox = page.mediaBox
+            
+            val sigWidth = 400
+            val sigHeight = 150
+            val bitmap = android.graphics.Bitmap.createBitmap(sigWidth, sigHeight, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
+            
+            val paint = android.graphics.Paint().apply {
+                color = inkColor
+                strokeWidth = 6f
+                style = android.graphics.Paint.Style.STROKE
+                isAntiAlias = true
+                strokeCap = android.graphics.Paint.Cap.ROUND
+                strokeJoin = android.graphics.Paint.Join.ROUND
+            }
+            
+            var minX = Float.MAX_VALUE
+            var maxX = Float.MIN_VALUE
+            var minY = Float.MAX_VALUE
+            var maxY = Float.MIN_VALUE
+            signaturePaths.forEach { path ->
+                path.forEach { pt ->
+                    if (pt.x < minX) minX = pt.x
+                    if (pt.x > maxX) maxX = pt.x
+                    if (pt.y < minY) minY = pt.y
+                    if (pt.y > maxY) maxY = pt.y
+                }
+            }
+            
+            val pathW = maxX - minX
+            val pathH = maxY - minY
+            if (pathW > 0f && pathH > 0f) {
+                val scaleX = 360f / pathW
+                val scaleY = 120f / pathH
+                val scale = Math.min(scaleX, scaleY)
+                
+                val offsetX = 20f - minX * scale + (360f - pathW * scale) / 2f
+                val offsetY = 20f - minY * scale + (120f - pathH * scale) / 2f
+                
+                signaturePaths.forEach { path ->
+                    if (path.size > 1) {
+                        val androidPath = android.graphics.Path()
+                        androidPath.moveTo(path[0].x * scale + offsetX, path[0].y * scale + offsetY)
+                        for (i in 1 until path.size) {
+                            androidPath.lineTo(path[i].x * scale + offsetX, path[i].y * scale + offsetY)
+                        }
+                        canvas.drawPath(androidPath, paint)
+                    }
+                }
+            }
+            
+            val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
+            
+            val w = 120f
+            val h = 45f
+            val margin = 30f
+            
+            val x = when (alignment) {
+                "bottom_left" -> margin
+                "bottom_center" -> (mediaBox.width - w) / 2f
+                else -> mediaBox.width - w - margin
+            }
+            val y = margin
+            
+            val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
+                document,
+                page,
+                com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND,
+                true,
+                true
+            )
+            contentStream.drawImage(pdImage, x, y, w, h)
+            contentStream.close()
+            
+            document.save(tempFile)
+            document.close()
+            document = null
+            
+            val uriStr = uri.toString()
+            textCache.remove(uriStr)
+            positionCache.remove(uriStr)
+            
+            var outputStream: java.io.OutputStream? = null
+            try {
+                outputStream = openOutputStream(context, uri)
+                if (outputStream != null) {
+                    tempFile.inputStream().use { input ->
+                        input.copyTo(outputStream)
+                    }
+                    return@withContext true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error writing signature back to PDF", e)
+            } finally {
+                outputStream?.close()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error adding signature to PDF page $pageIndex", e)
+        } finally {
+            try {
+                document?.close()
+                inputStream?.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
+            if (tempFile.exists()) tempFile.delete()
+        }
+        return@withContext false
+    }
+
+    suspend fun addStampOnPage(
+        context: Context,
+        uri: Uri,
+        pageIndex: Int,
+        stampType: Int,
+        stampText: String,
+        stampColor: Int,
+        importedImageUri: Uri?,
+        alignment: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        var document: PDDocument? = null
+        var inputStream: java.io.InputStream? = null
+        val tempFile = java.io.File(context.cacheDir, "temp_stamp_${System.currentTimeMillis()}.pdf")
+        
+        try {
+            inputStream = openInputStream(context, uri)
+            if (inputStream == null) return@withContext false
+            document = PDDocument.load(inputStream)
+            if (pageIndex < 0 || pageIndex >= document.numberOfPages) return@withContext false
+            
+            val page = document.getPage(pageIndex)
+            val mediaBox = page.mediaBox
+            
+            val stampWidth = 240
+            val stampHeight = 100
+            val bitmap = android.graphics.Bitmap.createBitmap(stampWidth, stampHeight, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+            bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
+            
+            if (stampType == 1 && importedImageUri != null) {
+                try {
+                    context.contentResolver.openInputStream(importedImageUri)?.use { imgIn ->
+                        val options = android.graphics.BitmapFactory.Options()
+                        val loadedBmp = android.graphics.BitmapFactory.decodeStream(imgIn, null, options)
+                        if (loadedBmp != null) {
+                            val srcW = loadedBmp.width
+                            val srcH = loadedBmp.height
+                            val scaleX = 240f / srcW
+                            val scaleY = 100f / srcH
+                            val scale = Math.min(scaleX, scaleY)
+                            val destW = (srcW * scale).toInt()
+                            val destH = (srcH * scale).toInt()
+                            val scaledBmp = android.graphics.Bitmap.createScaledBitmap(loadedBmp, destW, destH, true)
+                            
+                            canvas.drawBitmap(
+                                scaledBmp,
+                                (240 - destW) / 2f,
+                                (100 - destH) / 2f,
+                                null
+                            )
+                            scaledBmp.recycle()
+                            loadedBmp.recycle()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error loading imported stamp image in service", e)
+                }
+            } else {
+                val strokePaint = android.graphics.Paint().apply {
+                    this.color = stampColor
+                    style = android.graphics.Paint.Style.STROKE
+                    strokeWidth = 6f
+                    isAntiAlias = true
+                }
+                val fillPaint = android.graphics.Paint().apply {
+                    this.color = stampColor
+                    alpha = 25
+                    style = android.graphics.Paint.Style.FILL
+                }
+                
+                val rect = android.graphics.RectF(10f, 10f, 230f, 90f)
+                canvas.drawRoundRect(rect, 15f, 15f, fillPaint)
+                canvas.drawRoundRect(rect, 15f, 15f, strokePaint)
+                
+                val textPaint = android.graphics.Paint().apply {
+                    this.color = stampColor
+                    textSize = 28f
+                    isAntiAlias = true
+                    typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                    textAlign = android.graphics.Paint.Align.CENTER
+                }
+                
+                val textY = 50f - (textPaint.descent() + textPaint.ascent()) / 2f
+                canvas.drawText(stampText.uppercase(), 120f, textY, textPaint)
+            }
+            
+            val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
+            
+            val w = 140f
+            val h = 58f
+            val margin = 40f
+            
+            val x = when (alignment) {
+                "bottom_left" -> margin
+                "bottom_right" -> mediaBox.width - w - margin
+                "top_left" -> margin
+                "top_right" -> mediaBox.width - w - margin
+                else -> (mediaBox.width - w) / 2f
+            }
+            val y = when (alignment) {
+                "top_left", "top_right" -> mediaBox.height - h - margin
+                "bottom_left", "bottom_right" -> margin
+                else -> (mediaBox.height - h) / 2f
+            }
+            
+            val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
+                document,
+                page,
+                com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode.APPEND,
+                true,
+                true
+            )
+            contentStream.drawImage(pdImage, x, y, w, h)
+            contentStream.close()
+            
+            document.save(tempFile)
+            document.close()
+            document = null
+            
+            val uriStr = uri.toString()
+            textCache.remove(uriStr)
+            positionCache.remove(uriStr)
+            
+            var outputStream: java.io.OutputStream? = null
+            try {
+                outputStream = openOutputStream(context, uri)
+                if (outputStream != null) {
+                    tempFile.inputStream().use { input ->
+                        input.copyTo(outputStream)
+                    }
+                    return@withContext true
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error writing stamp back to PDF", e)
+            } finally {
+                outputStream?.close()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error adding stamp to PDF page $pageIndex", e)
+        } finally {
+            try {
+                document?.close()
+                inputStream?.close()
+            } catch (e: Exception) {
+                // Ignore
+            }
+            if (tempFile.exists()) tempFile.delete()
+        }
+        return@withContext false
+    }
 }
