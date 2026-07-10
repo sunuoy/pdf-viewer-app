@@ -601,12 +601,24 @@ class PdfTextService {
             val h = 45f
             val margin = 30f
             
-            val x = when (alignment) {
+            var x = when (alignment) {
                 "bottom_left" -> margin
                 "bottom_center" -> (mediaBox.width - w) / 2f
                 else -> mediaBox.width - w - margin
             }
-            val y = margin
+            var y = margin
+
+            if (alignment.startsWith("custom:")) {
+                try {
+                    val parts = alignment.removePrefix("custom:").split(",")
+                    val pctX = parts[0].toFloat()
+                    val pctY = parts[1].toFloat()
+                    x = pctX * (mediaBox.width - w)
+                    y = (1f - pctY) * (mediaBox.height - h)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
             
             val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(
                 document,
@@ -746,17 +758,29 @@ class PdfTextService {
             val h = 58f
             val margin = 40f
             
-            val x = when (alignment) {
+            var x = when (alignment) {
                 "bottom_left" -> margin
                 "bottom_right" -> mediaBox.width - w - margin
                 "top_left" -> margin
                 "top_right" -> mediaBox.width - w - margin
                 else -> (mediaBox.width - w) / 2f
             }
-            val y = when (alignment) {
+            var y = when (alignment) {
                 "top_left", "top_right" -> mediaBox.height - h - margin
                 "bottom_left", "bottom_right" -> margin
                 else -> (mediaBox.height - h) / 2f
+            }
+
+            if (alignment.startsWith("custom:")) {
+                try {
+                    val parts = alignment.removePrefix("custom:").split(",")
+                    val pctX = parts[0].toFloat()
+                    val pctY = parts[1].toFloat()
+                    x = pctX * (mediaBox.width - w)
+                    y = (1f - pctY) * (mediaBox.height - h)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
             
             val contentStream = com.tom_roush.pdfbox.pdmodel.PDPageContentStream(

@@ -8,7 +8,17 @@ import com.pdfsuny.app.MainActivity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import androidx.core.content.FileProvider
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -44,6 +54,15 @@ fun SettingsScreen(
     var nightModeDefault by remember { mutableStateOf(sharedPrefs.getBoolean("night_mode_default", false)) }
     var isVerticalScroll by remember { mutableStateOf(sharedPrefs.getBoolean("is_vertical_scroll", true)) }
     var useOpenGlEngine by remember { mutableStateOf(sharedPrefs.getBoolean("use_opengl_engine", false)) }
+
+    val scope = rememberCoroutineScope()
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showNoUpdateDialog by remember { mutableStateOf(false) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableFloatStateOf(0f) }
+    var latestVersionName by remember { mutableStateOf("") }
+    var downloadUrlPath by remember { mutableStateOf("") }
 
     val appInfo = remember {
         try {
@@ -277,18 +296,73 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedButton(
                         onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sunuoy/pdf-viewer-app/releases"))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Cannot open browser link", Toast.LENGTH_SHORT).show()
+                            if (!isCheckingUpdate && !isDownloading) {
+                                isCheckingUpdate = true
+                                scope.launch {
+                                    try {
+                                        val url = URL("https://api.github.com/repos/sunuoy/pdf-viewer-app/releases/latest")
+                                        val connection = withContext(Dispatchers.IO) {
+                                            val conn = url.openConnection() as HttpURLConnection
+                                            conn.requestMethod = "GET"
+                                            conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                                            conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                                            conn.connectTimeout = 10000
+                                            conn.readTimeout = 10000
+                                            conn.connect()
+                                            conn
+                                        }
+
+                                        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                                            val response = withContext(Dispatchers.IO) {
+                                                connection.inputStream.bufferedReader().use { it.readText() }
+                                            }
+                                            val json = JSONObject(response)
+                                            val tag = json.optString("tag_name", "")
+                                            val assets = json.optJSONArray("assets")
+                                            var apkUrl = ""
+                                            if (assets != null) {
+                                                for (i in 0 until assets.length()) {
+                                                    val asset = assets.getJSONObject(i)
+                                                    val name = asset.optString("name", "")
+                                                    if (name.endsWith(".apk")) {
+                                                        apkUrl = asset.optString("browser_download_url", "")
+                                                        break
+                                                    }
+                                                }
+                                            }
+
+                                            val currentVer = appInfo.first
+                                            if (tag.isNotEmpty() && isNewerVersion(currentVer, tag)) {
+                                                latestVersionName = tag
+                                                downloadUrlPath = apkUrl
+                                                showUpdateDialog = true
+                                            } else {
+                                                showNoUpdateDialog = true
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "Failed to check update: HTTP ${connection.responseCode}", Toast.LENGTH_LONG).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                        Toast.makeText(context, "Error checking update: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        isCheckingUpdate = false
+                                    }
+                                }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isCheckingUpdate && !isDownloading
                     ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Check for Updates on GitHub")
+                        if (isCheckingUpdate) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Checking for Updates...")
+                        } else {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Check for Updates")
+                        }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -298,6 +372,167 @@ fun SettingsScreen(
                     )
                 }
             }
+            
+            if (showUpdateDialog) {
+                AlertDialog(
+                    onDismissRequest = { showUpdateDialog = false },
+                    title = { Text("Update Available", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text("A new version ($latestVersionName) is available. Would you like to download and install it now?")
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showUpdateDialog = false
+                                if (downloadUrlPath.isNotEmpty()) {
+                                    isDownloading = true
+                                    downloadProgress = 0f
+                                    scope.launch {
+                                        val file = downloadApkFile(context, downloadUrlPath) { progress ->
+                                            downloadProgress = progress
+                                        }
+                                        isDownloading = false
+                                        if (file != null) {
+                                            triggerApkInstallation(context, file)
+                                        } else {
+                                            Toast.makeText(context, "Failed to download update APK.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                } else {
+                                    Toast.makeText(context, "No APK asset found in the latest release.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        ) {
+                            Text("Update")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showUpdateDialog = false }) {
+                            Text("Later")
+                        }
+                    }
+                )
+            }
+
+            if (showNoUpdateDialog) {
+                AlertDialog(
+                    onDismissRequest = { showNoUpdateDialog = false },
+                    title = { Text("Up to Date", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Text("You are using the latest version of the app (${appInfo.first}).")
+                    },
+                    confirmButton = {
+                        Button(onClick = { showNoUpdateDialog = false }) {
+                            Text("OK")
+                        }
+                    }
+                )
+            }
+
+            if (isDownloading) {
+                AlertDialog(
+                    onDismissRequest = {}, // Disable dismiss during download
+                    title = { Text("Downloading Update", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Please wait while the update is downloading...")
+                            LinearProgressIndicator(
+                                progress = { downloadProgress },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = "${(downloadProgress * 100).toInt()}%",
+                                modifier = Modifier.align(Alignment.End),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    },
+                    confirmButton = {} // Auto-closes when download finishes
+                )
+            }
         }
+    }
+}
+
+private fun isNewerVersion(current: String, latest: String): Boolean {
+    val cleanCurrent = current.removePrefix("v").removePrefix("V").trim()
+    val cleanLatest = latest.removePrefix("v").removePrefix("V").trim()
+    if (cleanCurrent == cleanLatest) return false
+    val currentParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
+    val latestParts = cleanLatest.split(".").mapNotNull { it.toIntOrNull() }
+    val maxLen = maxOf(currentParts.size, latestParts.size)
+    for (i in 0 until maxLen) {
+        val currVal = currentParts.getOrNull(i) ?: 0
+        val latVal = latestParts.getOrNull(i) ?: 0
+        if (latVal > currVal) return true
+        if (currVal > latVal) return false
+    }
+    return false
+}
+
+private suspend fun downloadApkFile(
+    context: Context,
+    urlString: String,
+    onProgress: (Float) -> Unit
+): File? = withContext(Dispatchers.IO) {
+    var inputStream: InputStream? = null
+    var outputStream: FileOutputStream? = null
+    try {
+        val url = URL(urlString)
+        val connection = url.openConnection() as HttpURLConnection
+        connection.connectTimeout = 15000
+        connection.readTimeout = 20000
+        connection.requestMethod = "GET"
+        connection.connect()
+
+        if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+            return@withContext null
+        }
+
+        val fileLength = connection.contentLength
+        val tempFile = File(context.cacheDir, "app-update.apk")
+        if (tempFile.exists()) tempFile.delete()
+
+        inputStream = connection.inputStream
+        outputStream = FileOutputStream(tempFile)
+
+        val data = ByteArray(4096)
+        var total = 0L
+        var count: Int
+        while (inputStream.read(data).also { count = it } != -1) {
+            total += count
+            if (fileLength > 0) {
+                onProgress(total.toFloat() / fileLength.toFloat())
+            }
+            outputStream.write(data, 0, count)
+        }
+        outputStream.flush()
+        return@withContext tempFile
+    } catch (e: Exception) {
+        e.printStackTrace()
+        return@withContext null
+    } finally {
+        try {
+            inputStream?.close()
+            outputStream?.close()
+        } catch (e: Exception) {}
+    }
+}
+
+private fun triggerApkInstallation(context: Context, apkFile: File) {
+    try {
+        val authority = "${context.packageName}.fileprovider"
+        val apkUri = FileProvider.getUriForFile(context, authority, apkFile)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Installer failed: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }

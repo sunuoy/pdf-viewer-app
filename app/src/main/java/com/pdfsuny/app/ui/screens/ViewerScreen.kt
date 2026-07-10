@@ -335,6 +335,9 @@ fun PdfViewerScreen(
     var showSignatureDialog by remember { mutableStateOf(false) }
     val signaturePaths = remember { mutableStateListOf<List<Offset>>() }
     var signatureAlignment by remember { mutableStateOf("bottom_right") }
+    var signaturePositionMode by remember { mutableStateOf("preset") }
+    var signatureCustomX by remember { mutableFloatStateOf(0.5f) }
+    var signatureCustomY by remember { mutableFloatStateOf(0.5f) }
     var sigInkR by remember { mutableIntStateOf(0) }
     var sigInkG by remember { mutableIntStateOf(0) }
     var sigInkB by remember { mutableIntStateOf(0) }
@@ -345,6 +348,9 @@ fun PdfViewerScreen(
     var stampText by remember { mutableStateOf("APPROVED") }
     var stampTypeTab by remember { mutableStateOf(0) }
     var stampAlignment by remember { mutableStateOf("center") }
+    var stampPositionMode by remember { mutableStateOf("preset") }
+    var stampCustomX by remember { mutableFloatStateOf(0.5f) }
+    var stampCustomY by remember { mutableFloatStateOf(0.5f) }
     var stampImageUri by remember { mutableStateOf<Uri?>(null) }
     var stampR by remember { mutableIntStateOf(255) }
     var stampG by remember { mutableIntStateOf(0) }
@@ -3966,24 +3972,19 @@ fun PdfViewerScreen(
                                 }
                             }
                             
-                            Text("Position Alignment:", style = MaterialTheme.typography.titleSmall)
+                            Text("Position Mode:", style = MaterialTheme.typography.titleSmall)
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                val alignmentOptions = listOf(
-                                    "bottom_left" to "Left",
-                                    "bottom_center" to "Center",
-                                    "bottom_right" to "Right"
-                                )
-                                alignmentOptions.forEach { (alignId, label) ->
-                                    val isSelected = signatureAlignment == alignId
+                                listOf("preset" to "Presets", "custom" to "Custom (Drag/Tap)").forEach { (mode, label) ->
+                                    val isSelected = signaturePositionMode == mode
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                                            .clickable { signatureAlignment = alignId }
+                                            .clickable { signaturePositionMode = mode }
                                             .padding(vertical = 8.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -3993,6 +3994,128 @@ fun PdfViewerScreen(
                                             style = MaterialTheme.typography.bodySmall,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                         )
+                                    }
+                                }
+                            }
+
+                            if (signaturePositionMode == "preset") {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val alignmentOptions = listOf(
+                                        "bottom_left" to "Left",
+                                        "bottom_center" to "Center",
+                                        "bottom_right" to "Right"
+                                    )
+                                    alignmentOptions.forEach { (alignId, label) ->
+                                        val isSelected = signatureAlignment == alignId
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                                .clickable { signatureAlignment = alignId }
+                                                .padding(vertical = 8.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("X (Left/Right): ${(signatureCustomX * 100).toInt()}%", modifier = Modifier.width(130.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            Slider(
+                                                value = signatureCustomX,
+                                                onValueChange = { signatureCustomX = it },
+                                                valueRange = 0f..1f,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Y (Top/Bottom): ${(signatureCustomY * 100).toInt()}%", modifier = Modifier.width(130.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            Slider(
+                                                value = signatureCustomY,
+                                                onValueChange = { signatureCustomY = it },
+                                                valueRange = 0f..1f,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Drag or Tap on Page representation to position:", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.Start))
+                                    
+                                    val pageW = 200.dp
+                                    val pageH = 260.dp
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = pageW, height = pageH)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White)
+                                            .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
+                                            .pointerInput(Unit) {
+                                                detectTapGestures { offset ->
+                                                    signatureCustomX = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                                    signatureCustomY = (offset.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                                }
+                                            }
+                                    ) {
+                                        // Fake text lines to represent document content
+                                        Column(
+                                            modifier = Modifier.fillMaxSize().padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Box(modifier = Modifier.fillMaxWidth().height(12.dp).background(Color(0xFFE2E8F0)))
+                                            Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Color(0xFFF1F5F9)))
+                                            Box(modifier = Modifier.fillMaxWidth(0.8f).height(8.dp).background(Color(0xFFF1F5F9)))
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Box(modifier = Modifier.fillMaxWidth().height(6.dp).background(Color(0xFFF1F5F9)))
+                                        }
+
+                                        val previewW = 65.dp
+                                        val previewH = 28.dp
+                                        Box(
+                                            modifier = Modifier
+                                                .offset(
+                                                    x = (pageW - previewW - 2.dp) * signatureCustomX,
+                                                    y = (pageH - previewH - 2.dp) * signatureCustomY
+                                                )
+                                                .size(width = previewW, height = previewH)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                                                .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                                                .pointerInput(Unit) {
+                                                    detectDragGestures { change, dragAmount ->
+                                                        change.consume()
+                                                        val widthPx = (pageW - previewW - 2.dp).toPx()
+                                                        val heightPx = (pageH - previewH - 2.dp).toPx()
+                                                        signatureCustomX = (signatureCustomX + dragAmount.x / widthPx).coerceIn(0f, 1f)
+                                                        signatureCustomY = (signatureCustomY + dragAmount.y / heightPx).coerceIn(0f, 1f)
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "Signature",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 8.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -4022,7 +4145,7 @@ fun PdfViewerScreen(
                                                     uri = Uri.parse(pdfPath),
                                                     pageIndex = currentPageIndex,
                                                     signaturePaths = pointPaths,
-                                                    alignment = signatureAlignment,
+                                                    alignment = if (signaturePositionMode == "custom") "custom:$signatureCustomX,$signatureCustomY" else signatureAlignment,
                                                     inkColor = argbColor
                                                 )
                                                 isSigSaving = false
@@ -4231,26 +4354,19 @@ fun PdfViewerScreen(
                                 }
                             }
                             
-                            Text("Position Alignment:", style = MaterialTheme.typography.titleSmall)
+                            Text("Position Mode:", style = MaterialTheme.typography.titleSmall)
                             Row(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                val alignmentOptions = listOf(
-                                    "top_left" to "Top L",
-                                    "top_right" to "Top R",
-                                    "center" to "Center",
-                                    "bottom_left" to "Bot L",
-                                    "bottom_right" to "Bot R"
-                                )
-                                alignmentOptions.forEach { (alignId, label) ->
-                                    val isSelected = stampAlignment == alignId
+                                listOf("preset" to "Presets", "custom" to "Custom (Drag/Tap)").forEach { (mode, label) ->
+                                    val isSelected = stampPositionMode == mode
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .clip(RoundedCornerShape(6.dp))
+                                            .clip(RoundedCornerShape(8.dp))
                                             .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                                            .clickable { stampAlignment = alignId }
+                                            .clickable { stampPositionMode = mode }
                                             .padding(vertical = 8.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -4258,9 +4374,141 @@ fun PdfViewerScreen(
                                             text = label,
                                             color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                             style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 11.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                         )
+                                    }
+                                }
+                            }
+
+                            if (stampPositionMode == "preset") {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val alignmentOptions = listOf(
+                                        "top_left" to "Top L",
+                                        "top_right" to "Top R",
+                                        "center" to "Center",
+                                        "bottom_left" to "Bot L",
+                                        "bottom_right" to "Bot R"
+                                    )
+                                    alignmentOptions.forEach { (alignId, label) ->
+                                        val isSelected = stampAlignment == alignId
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                                                .clickable { stampAlignment = alignId }
+                                                .padding(vertical = 8.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("X (Left/Right): ${(stampCustomX * 100).toInt()}%", modifier = Modifier.width(130.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            Slider(
+                                                value = stampCustomX,
+                                                onValueChange = { stampCustomX = it },
+                                                valueRange = 0f..1f,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Y (Top/Bottom): ${(stampCustomY * 100).toInt()}%", modifier = Modifier.width(130.dp), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            Slider(
+                                                value = stampCustomY,
+                                                onValueChange = { stampCustomY = it },
+                                                valueRange = 0f..1f,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Drag or Tap on Page representation to position:", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.Start))
+                                    
+                                    val pageW = 200.dp
+                                    val pageH = 260.dp
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = pageW, height = pageH)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White)
+                                            .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
+                                            .pointerInput(Unit) {
+                                                detectTapGestures { offset ->
+                                                    stampCustomX = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                                    stampCustomY = (offset.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                                }
+                                            }
+                                    ) {
+                                        // Fake text lines to represent document content
+                                        Column(
+                                            modifier = Modifier.fillMaxSize().padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Box(modifier = Modifier.fillMaxWidth().height(12.dp).background(Color(0xFFE2E8F0)))
+                                            Box(modifier = Modifier.fillMaxWidth().height(8.dp).background(Color(0xFFF1F5F9)))
+                                            Box(modifier = Modifier.fillMaxWidth(0.8f).height(8.dp).background(Color(0xFFF1F5F9)))
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Box(modifier = Modifier.fillMaxWidth().height(6.dp).background(Color(0xFFF1F5F9)))
+                                        }
+
+                                        val previewW = 75.dp
+                                        val previewH = 30.dp
+                                        val previewText = if (stampTypeTab == 0) {
+                                            if (stampText.isNotBlank()) stampText.uppercase() else "STAMP"
+                                        } else {
+                                            "IMAGE"
+                                        }
+                                        
+                                        Box(
+                                            modifier = Modifier
+                                                .offset(
+                                                    x = (pageW - previewW - 2.dp) * stampCustomX,
+                                                    y = (pageH - previewH - 2.dp) * stampCustomY
+                                                )
+                                                .size(width = previewW, height = previewH)
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                                                .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                                                .pointerInput(Unit) {
+                                                    detectDragGestures { change, dragAmount ->
+                                                        change.consume()
+                                                        val widthPx = (pageW - previewW - 2.dp).toPx()
+                                                        val heightPx = (pageH - previewH - 2.dp).toPx()
+                                                        stampCustomX = (stampCustomX + dragAmount.x / widthPx).coerceIn(0f, 1f)
+                                                        stampCustomY = (stampCustomY + dragAmount.y / heightPx).coerceIn(0f, 1f)
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = previewText,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 8.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -4292,7 +4540,7 @@ fun PdfViewerScreen(
                                                     stampText = stampText,
                                                     stampColor = argbColor,
                                                     importedImageUri = stampImageUri,
-                                                    alignment = stampAlignment
+                                                    alignment = if (stampPositionMode == "custom") "custom:$stampCustomX,$stampCustomY" else stampAlignment
                                                 )
                                                 isStampSaving = false
                                                 if (success) {
