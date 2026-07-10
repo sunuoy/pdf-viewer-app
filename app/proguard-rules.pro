@@ -7,6 +7,9 @@
 -keep class * extends androidx.room.RoomDatabase
 -dontwarn androidx.room.paging.**
 
+# SLF4J (used by junrar) - suppress missing impl classes
+-dontwarn org.slf4j.**
+
 # General optimizations
 -repackageclasses ''
 -allowaccessmodification
