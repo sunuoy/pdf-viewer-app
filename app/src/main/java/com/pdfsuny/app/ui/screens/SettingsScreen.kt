@@ -300,37 +300,41 @@ fun SettingsScreen(
                                 isCheckingUpdate = true
                                 scope.launch {
                                     try {
-                                        val url = URL("https://api.github.com/repos/sunuoy/pdf-viewer-app/releases/latest")
-                                        val connection = withContext(Dispatchers.IO) {
-                                            val conn = url.openConnection() as HttpURLConnection
-                                            conn.requestMethod = "GET"
-                                            conn.setRequestProperty("Accept", "application/vnd.github.v3+json")
-                                            conn.setRequestProperty("User-Agent", "Mozilla/5.0")
-                                            conn.connectTimeout = 10000
-                                            conn.readTimeout = 10000
-                                            conn.connect()
-                                            conn
-                                        }
+                                        val result = withContext(Dispatchers.IO) {
+                                            val url = URL("https://api.github.com/repos/sunuoy/pdf-viewer-app/releases/latest")
+                                            val connection = url.openConnection() as HttpURLConnection
+                                            connection.requestMethod = "GET"
+                                            connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                                            connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+                                            connection.connectTimeout = 10000
+                                            connection.readTimeout = 10000
+                                            connection.connect()
 
-                                        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                                            val response = withContext(Dispatchers.IO) {
-                                                connection.inputStream.bufferedReader().use { it.readText() }
-                                            }
-                                            val json = JSONObject(response)
-                                            val tag = json.optString("tag_name", "")
-                                            val assets = json.optJSONArray("assets")
-                                            var apkUrl = ""
-                                            if (assets != null) {
-                                                for (i in 0 until assets.length()) {
-                                                    val asset = assets.getJSONObject(i)
-                                                    val name = asset.optString("name", "")
-                                                    if (name.endsWith(".apk")) {
-                                                        apkUrl = asset.optString("browser_download_url", "")
-                                                        break
+                                            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                                                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                                                val json = JSONObject(response)
+                                                val tag = json.optString("tag_name", "")
+                                                val assets = json.optJSONArray("assets")
+                                                var apkUrl = ""
+                                                if (assets != null) {
+                                                    for (i in 0 until assets.length()) {
+                                                        val asset = assets.getJSONObject(i)
+                                                        val name = asset.optString("name", "")
+                                                        if (name.endsWith(".apk")) {
+                                                            apkUrl = asset.optString("browser_download_url", "")
+                                                            break
+                                                        }
                                                     }
                                                 }
+                                                Triple(true, tag, apkUrl)
+                                            } else {
+                                                Triple(false, "HTTP ${connection.responseCode}", "")
                                             }
+                                        }
 
+                                        if (result.first) {
+                                            val tag = result.second
+                                            val apkUrl = result.third
                                             val currentVer = appInfo.first
                                             if (tag.isNotEmpty() && isNewerVersion(currentVer, tag)) {
                                                 latestVersionName = tag
@@ -340,7 +344,7 @@ fun SettingsScreen(
                                                 showNoUpdateDialog = true
                                             }
                                         } else {
-                                            Toast.makeText(context, "Failed to check update: HTTP ${connection.responseCode}", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Failed to check update: ${result.second}", Toast.LENGTH_LONG).show()
                                         }
                                     } catch (e: Exception) {
                                         e.printStackTrace()
