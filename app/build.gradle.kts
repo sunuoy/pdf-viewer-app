@@ -18,7 +18,7 @@ android {
         val timestampSeconds = (System.currentTimeMillis() / 1000).toInt()
         val formattedDate = SimpleDateFormat("yyMMdd.HHmm").format(Date())
         versionCode = timestampSeconds
-        versionName = "1.5.1-$formattedDate"
+        versionName = "1.5.2-$formattedDate"
 
 
 
