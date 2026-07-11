@@ -458,8 +458,8 @@ fun SettingsScreen(
 }
 
 private fun isNewerVersion(current: String, latest: String): Boolean {
-    val cleanCurrent = current.removePrefix("v").removePrefix("V").trim()
-    val cleanLatest = latest.removePrefix("v").removePrefix("V").trim()
+    val cleanCurrent = current.removePrefix("v").removePrefix("V").substringBefore("-").trim()
+    val cleanLatest = latest.removePrefix("v").removePrefix("V").substringBefore("-").trim()
     if (cleanCurrent == cleanLatest) return false
     val currentParts = cleanCurrent.split(".").mapNotNull { it.toIntOrNull() }
     val latestParts = cleanLatest.split(".").mapNotNull { it.toIntOrNull() }

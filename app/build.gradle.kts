@@ -5,6 +5,9 @@ plugins {
   alias(libs.plugins.kotlin.serialization)
 }
 
+import java.text.SimpleDateFormat
+import java.util.Date
+
 android {
     namespace = "com.pdfsuny.app"
     compileSdk = 36
@@ -12,8 +15,10 @@ android {
         applicationId = "com.pdfsuny.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 42
-        versionName = "1.5.1"
+        val timestampSeconds = (System.currentTimeMillis() / 1000).toInt()
+        val formattedDate = SimpleDateFormat("yyMMdd.HHmm").format(Date())
+        versionCode = timestampSeconds
+        versionName = "1.5.1-$formattedDate"
 
 
 

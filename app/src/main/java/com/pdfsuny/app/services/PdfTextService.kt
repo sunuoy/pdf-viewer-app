@@ -528,7 +528,8 @@ class PdfTextService {
         pageIndex: Int,
         signaturePaths: List<List<android.graphics.PointF>>,
         alignment: String,
-        inkColor: Int
+        inkColor: Int,
+        scale: Float = 1.0f
     ): Boolean = withContext(Dispatchers.IO) {
         if (signaturePaths.isEmpty()) return@withContext false
         
@@ -578,17 +579,17 @@ class PdfTextService {
             if (pathW > 0f && pathH > 0f) {
                 val scaleX = 360f / pathW
                 val scaleY = 120f / pathH
-                val scale = Math.min(scaleX, scaleY)
+                val scaleFactor = Math.min(scaleX, scaleY)
                 
-                val offsetX = 20f - minX * scale + (360f - pathW * scale) / 2f
-                val offsetY = 20f - minY * scale + (120f - pathH * scale) / 2f
+                val offsetX = 20f - minX * scaleFactor + (360f - pathW * scaleFactor) / 2f
+                val offsetY = 20f - minY * scaleFactor + (120f - pathH * scaleFactor) / 2f
                 
                 signaturePaths.forEach { path ->
                     if (path.size > 1) {
                         val androidPath = android.graphics.Path()
-                        androidPath.moveTo(path[0].x * scale + offsetX, path[0].y * scale + offsetY)
+                        androidPath.moveTo(path[0].x * scaleFactor + offsetX, path[0].y * scaleFactor + offsetY)
                         for (i in 1 until path.size) {
-                            androidPath.lineTo(path[i].x * scale + offsetX, path[i].y * scale + offsetY)
+                            androidPath.lineTo(path[i].x * scaleFactor + offsetX, path[i].y * scaleFactor + offsetY)
                         }
                         canvas.drawPath(androidPath, paint)
                     }
@@ -597,8 +598,8 @@ class PdfTextService {
             
             val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
             
-            val w = 120f
-            val h = 45f
+            val w = 120f * scale
+            val h = 45f * scale
             val margin = 30f
             
             var x = when (alignment) {
@@ -674,7 +675,8 @@ class PdfTextService {
         stampText: String,
         stampColor: Int,
         importedImageUri: Uri?,
-        alignment: String
+        alignment: String,
+        scale: Float = 1.0f
     ): Boolean = withContext(Dispatchers.IO) {
         var document: PDDocument? = null
         var inputStream: java.io.InputStream? = null
@@ -754,8 +756,8 @@ class PdfTextService {
             
             val pdImage = com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(document, bitmap)
             
-            val w = 140f
-            val h = 58f
+            val w = 140f * scale
+            val h = 58f * scale
             val margin = 40f
             
             var x = when (alignment) {

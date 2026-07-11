@@ -131,6 +131,10 @@ enum class ViewerSubPage {
     MISC_OPTIONS
 }
 
+enum class PlacementType {
+    NONE, SIGNATURE, STAMP
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PdfViewerScreen(
@@ -335,7 +339,7 @@ fun PdfViewerScreen(
     var showSignatureDialog by remember { mutableStateOf(false) }
     val signaturePaths = remember { mutableStateListOf<List<Offset>>() }
     var signatureAlignment by remember { mutableStateOf("bottom_right") }
-    var signaturePositionMode by remember { mutableStateOf("preset") }
+    var signatureScale by remember { mutableStateOf(1.0f) }
     var signatureCustomX by remember { mutableFloatStateOf(0.5f) }
     var signatureCustomY by remember { mutableFloatStateOf(0.5f) }
     var sigInkR by remember { mutableIntStateOf(0) }
@@ -348,7 +352,7 @@ fun PdfViewerScreen(
     var stampText by remember { mutableStateOf("APPROVED") }
     var stampTypeTab by remember { mutableStateOf(0) }
     var stampAlignment by remember { mutableStateOf("center") }
-    var stampPositionMode by remember { mutableStateOf("preset") }
+    var stampScale by remember { mutableStateOf(1.0f) }
     var stampCustomX by remember { mutableFloatStateOf(0.5f) }
     var stampCustomY by remember { mutableFloatStateOf(0.5f) }
     var stampImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -369,6 +373,18 @@ fun PdfViewerScreen(
     var pendingSaveAction by remember { mutableStateOf<(suspend (Uri) -> Boolean)?>(null) }
     var isSavingInProgress by remember { mutableStateOf(false) }
     var suggestedCopyName by remember { mutableStateOf("document_edited.pdf") }
+
+    // Direct PDF Placement Mode states
+    var placementType by remember { mutableStateOf(PlacementType.NONE) }
+    val isPlacementActive = placementType != PlacementType.NONE
+
+    var tempSignaturePaths by remember { mutableStateOf<List<List<Offset>>>(emptyList()) }
+    var tempSigInkColor by remember { mutableIntStateOf(0) }
+
+    var tempStampText by remember { mutableStateOf("") }
+    var tempStampType by remember { mutableIntStateOf(0) }
+    var tempStampColor by remember { mutableIntStateOf(0) }
+    var tempStampImageUri by remember { mutableStateOf<Uri?>(null) }
 
     val saveCopyLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
@@ -2217,6 +2233,96 @@ fun PdfViewerScreen(
                                     }
                                 }
                             }
+                            
+                            if (isPlacementActive && currentPageIndex == index) {
+                                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                    val pageW = maxWidth
+                                    val pageH = maxHeight
+                                    
+                                    // Tap detector over the entire page area
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .pointerInput(Unit) {
+                                                detectTapGestures { offset ->
+                                                    val xPct = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                                    val yPct = (offset.y / size.height.toFloat()).coerceIn(0f, 1f)
+                                                    if (placementType == PlacementType.SIGNATURE) {
+                                                        signatureCustomX = xPct
+                                                        signatureCustomY = yPct
+                                                    } else if (placementType == PlacementType.STAMP) {
+                                                        stampCustomX = xPct
+                                                        stampCustomY = yPct
+                                                    }
+                                                }
+                                            }
+                                    )
+                                    
+                                    // Draggable Annotation Preview Box
+                                    val currentScale = if (placementType == PlacementType.SIGNATURE) signatureScale else stampScale
+                                    val defaultW = if (placementType == PlacementType.SIGNATURE) 120.dp else 140.dp
+                                    val defaultH = if (placementType == PlacementType.SIGNATURE) 45.dp else 58.dp
+                                    val previewW = defaultW * currentScale
+                                    val previewH = defaultH * currentScale
+                                    val customX = if (placementType == PlacementType.SIGNATURE) signatureCustomX else stampCustomX
+                                    val customY = if (placementType == PlacementType.SIGNATURE) signatureCustomY else stampCustomY
+                                    
+                                    val previewText = if (placementType == PlacementType.SIGNATURE) {
+                                        "Signature"
+                                    } else {
+                                        if (tempStampType == 0) {
+                                            if (tempStampText.isNotBlank()) tempStampText.uppercase() else "STAMP"
+                                        } else {
+                                            "IMAGE STAMP"
+                                        }
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .offset(
+                                                x = (pageW - previewW).coerceAtLeast(0.dp) * customX,
+                                                y = (pageH - previewH).coerceAtLeast(0.dp) * customY
+                                            )
+                                            .size(width = previewW, height = previewH)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+                                            .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                                            .pointerInput(Unit) {
+                                                detectDragGestures { change, dragAmount ->
+                                                    change.consume()
+                                                    val widthPx = (pageW - previewW).toPx()
+                                                    val heightPx = (pageH - previewH).toPx()
+                                                    
+                                                    if (placementType == PlacementType.SIGNATURE) {
+                                                        if (widthPx > 0f) {
+                                                            signatureCustomX = (signatureCustomX + dragAmount.x / widthPx).coerceIn(0f, 1f)
+                                                        }
+                                                        if (heightPx > 0f) {
+                                                            signatureCustomY = (signatureCustomY + dragAmount.y / heightPx).coerceIn(0f, 1f)
+                                                        }
+                                                    } else if (placementType == PlacementType.STAMP) {
+                                                        if (widthPx > 0f) {
+                                                            stampCustomX = (stampCustomX + dragAmount.x / widthPx).coerceIn(0f, 1f)
+                                                        }
+                                                        if (heightPx > 0f) {
+                                                            stampCustomY = (stampCustomY + dragAmount.y / heightPx).coerceIn(0f, 1f)
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = previewText,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -2225,6 +2331,7 @@ fun PdfViewerScreen(
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
+                        userScrollEnabled = !isPlacementActive,
                         contentPadding = PaddingValues(vertical = 16.dp, horizontal = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -2240,6 +2347,7 @@ fun PdfViewerScreen(
                     LazyRow(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
+                        userScrollEnabled = !isPlacementActive,
                         contentPadding = PaddingValues(vertical = 8.dp, horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -4130,31 +4238,11 @@ fun PdfViewerScreen(
                                         if (signaturePaths.isEmpty()) {
                                             Toast.makeText(context, "Please sign on the pad first", Toast.LENGTH_SHORT).show()
                                         } else {
-                                            val pointPaths = signaturePaths.map { path ->
-                                                path.map { PointF(it.x, it.y) }
-                                            }
-                                            val argbColor = (0xFF shl 24) or (sigInkR shl 16) or (sigInkG shl 8) or sigInkB
-                                            val alignVal = if (signaturePositionMode == "custom") "custom:$signatureCustomX,$signatureCustomY" else signatureAlignment
-                                            val pIdx = currentPageIndex
-                                            
-                                            pendingSaveAction = { targetUri ->
-                                                val ok = pdfTextService.addSignatureOnPage(
-                                                    context = context,
-                                                    uri = targetUri,
-                                                    pageIndex = pIdx,
-                                                    signaturePaths = pointPaths,
-                                                    alignment = alignVal,
-                                                    inkColor = argbColor
-                                                )
-                                                if (ok) {
-                                                    withContext(Dispatchers.Main) {
-                                                        showSignatureDialog = false
-                                                    }
-                                                }
-                                                ok
-                                            }
-                                            suggestedCopyName = "${documentName.substringBeforeLast(".")}_signed.pdf"
-                                            showSaveConfirmDialog = true
+                                            tempSignaturePaths = signaturePaths.toList()
+                                            tempSigInkColor = (0xFF shl 24) or (sigInkR shl 16) or (sigInkG shl 8) or sigInkB
+                                            showSignatureDialog = false
+                                            signatureScale = 1.0f
+                                            placementType = PlacementType.SIGNATURE
                                         }
                                     }
                                 ) {
@@ -4551,33 +4639,13 @@ fun PdfViewerScreen(
                                         } else if (stampTypeTab == 1 && stampImageUri == null) {
                                             Toast.makeText(context, "Please select an image stamp first", Toast.LENGTH_SHORT).show()
                                         } else {
-                                            val argbColor = (0xFF shl 24) or (stampR shl 16) or (stampG shl 8) or stampB
-                                            val sType = stampTypeTab
-                                            val sText = stampText
-                                            val sImgUri = stampImageUri
-                                            val alignVal = if (stampPositionMode == "custom") "custom:$stampCustomX,$stampCustomY" else stampAlignment
-                                            val pIdx = currentPageIndex
-                                            
-                                            pendingSaveAction = { targetUri ->
-                                                val ok = pdfTextService.addStampOnPage(
-                                                    context = context,
-                                                    uri = targetUri,
-                                                    pageIndex = pIdx,
-                                                    stampType = sType,
-                                                    stampText = sText,
-                                                    stampColor = argbColor,
-                                                    importedImageUri = sImgUri,
-                                                    alignment = alignVal
-                                                )
-                                                if (ok) {
-                                                    withContext(Dispatchers.Main) {
-                                                        showStampDialog = false
-                                                    }
-                                                }
-                                                ok
-                                            }
-                                            suggestedCopyName = "${documentName.substringBeforeLast(".")}_stamped.pdf"
-                                            showSaveConfirmDialog = true
+                                            tempStampText = stampText
+                                            tempStampType = stampTypeTab
+                                            tempStampColor = (0xFF shl 24) or (stampR shl 16) or (stampG shl 8) or stampB
+                                            tempStampImageUri = stampImageUri
+                                            showStampDialog = false
+                                            stampScale = 1.0f
+                                            placementType = PlacementType.STAMP
                                         }
                                     }
                                 ) {
@@ -4597,6 +4665,167 @@ fun PdfViewerScreen(
                         }
                     }
                 )
+            }
+
+            if (isPlacementActive) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    tonalElevation = 8.dp,
+                    shadowElevation = 6.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Placement Mode",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "Drag the preview box or tap on the PDF page to position the annotation.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        // Size Slider
+                        val activeScale = if (placementType == PlacementType.SIGNATURE) signatureScale else stampScale
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Size",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = String.format("%.1fx", activeScale),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Slider(
+                                value = activeScale,
+                                onValueChange = { newValue ->
+                                    if (placementType == PlacementType.SIGNATURE) {
+                                        signatureScale = newValue
+                                    } else if (placementType == PlacementType.STAMP) {
+                                        stampScale = newValue
+                                    }
+                                },
+                                valueRange = 0.5f..2.5f,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    // Exit placement mode and re-open editing dialog
+                                    if (placementType == PlacementType.SIGNATURE) {
+                                        signaturePaths.clear()
+                                        signaturePaths.addAll(tempSignaturePaths)
+                                        showSignatureDialog = true
+                                    } else if (placementType == PlacementType.STAMP) {
+                                        stampText = tempStampText
+                                        stampTypeTab = tempStampType
+                                        stampImageUri = tempStampImageUri
+                                        showStampDialog = true
+                                    }
+                                    placementType = PlacementType.NONE
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    val pIdx = currentPageIndex
+                                    if (placementType == PlacementType.SIGNATURE) {
+                                        val pointPaths = tempSignaturePaths.map { path ->
+                                            path.map { PointF(it.x, it.y) }
+                                        }
+                                        val inkColorVal = tempSigInkColor
+                                        val customX = signatureCustomX
+                                        val customY = signatureCustomY
+                                        val currentSigScale = signatureScale
+                                        
+                                        pendingSaveAction = { targetUri ->
+                                            val ok = pdfTextService.addSignatureOnPage(
+                                                context = context,
+                                                uri = targetUri,
+                                                pageIndex = pIdx,
+                                                signaturePaths = pointPaths,
+                                                alignment = "custom:$customX,$customY",
+                                                inkColor = inkColorVal,
+                                                scale = currentSigScale
+                                            )
+                                            if (ok) {
+                                                withContext(Dispatchers.Main) {
+                                                    placementType = PlacementType.NONE
+                                                }
+                                            }
+                                            ok
+                                        }
+                                        suggestedCopyName = "${documentName.substringBeforeLast(".")}_signed.pdf"
+                                    } else if (placementType == PlacementType.STAMP) {
+                                        val sType = tempStampType
+                                        val sText = tempStampText
+                                        val sColor = tempStampColor
+                                        val sImgUri = tempStampImageUri
+                                        val customX = stampCustomX
+                                        val customY = stampCustomY
+                                        val currentStampScale = stampScale
+                                        
+                                        pendingSaveAction = { targetUri ->
+                                            val ok = pdfTextService.addStampOnPage(
+                                                context = context,
+                                                uri = targetUri,
+                                                pageIndex = pIdx,
+                                                stampType = sType,
+                                                stampText = sText,
+                                                stampColor = sColor,
+                                                importedImageUri = sImgUri,
+                                                alignment = "custom:$customX,$customY",
+                                                scale = currentStampScale
+                                            )
+                                            if (ok) {
+                                                withContext(Dispatchers.Main) {
+                                                    placementType = PlacementType.NONE
+                                                }
+                                            }
+                                            ok
+                                        }
+                                        suggestedCopyName = "${documentName.substringBeforeLast(".")}_stamped.pdf"
+                                    }
+                                    showSaveConfirmDialog = true
+                                }
+                            ) {
+                                Text("Confirm Placement")
+                            }
+                        }
+                    }
+                }
             }
         }
     }

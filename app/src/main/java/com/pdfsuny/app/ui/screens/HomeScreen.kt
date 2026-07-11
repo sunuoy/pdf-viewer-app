@@ -67,6 +67,7 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Copyright
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -191,6 +192,11 @@ fun HomeScreen(
     var removePasswordInput by remember { mutableStateOf("") }
     var removePasswordVisible by remember { mutableStateOf(false) }
     var removePasswordError by remember { mutableStateOf<String?>(null) }
+
+    // Web to PDF State
+    var showWebToPdfDialog by remember { mutableStateOf(false) }
+    var webToPdfUrl by remember { mutableStateOf("") }
+    var isWebToPdfLoading by remember { mutableStateOf(false) }
 
     // Add Watermark State
     var showAddWatermarkDialog by remember { mutableStateOf(false) }
@@ -1824,6 +1830,13 @@ fun HomeScreen(
                         description = "Add custom stamp approval or logo",
                         icon = Icons.Default.Check,
                         gradientColors = listOf(Color(0xFF880E4F), Color(0xFFFF4081))
+                    ),
+                    EditorToolItem(
+                        tool = EditorTool.WEB_TO_PDF,
+                        title = "Web to PDF",
+                        description = "Convert a webpage to PDF",
+                        icon = Icons.Default.Language,
+                        gradientColors = listOf(Color(0xFF3F51B5), Color(0xFFC5CAE9))
                     )
                 )
 
@@ -1841,6 +1854,8 @@ fun HomeScreen(
                                     mergePickerLauncher.launch(arrayOf("application/pdf"))
                                 } else if (item.tool == EditorTool.IMAGES_TO_PDF) {
                                     onNavigateToArrangeImages(emptyList())
+                                } else if (item.tool == EditorTool.WEB_TO_PDF) {
+                                    showWebToPdfDialog = true
                                 } else if (item.tool == EditorTool.ZIP_TO_PDF) {
                                     activeTool = item.tool
                                     editorFilePickerLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
@@ -2412,6 +2427,51 @@ fun HomeScreen(
                         selectedInputUri = null
                     }
                 ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Web to PDF Dialog
+    if (showWebToPdfDialog) {
+        AlertDialog(
+            onDismissRequest = { showWebToPdfDialog = false },
+            title = { Text("Convert Web to PDF", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("Enter website URL to convert:", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = webToPdfUrl,
+                        onValueChange = { webToPdfUrl = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("https://example.com") }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        var finalUrl = webToPdfUrl.trim()
+                        if (finalUrl.isNotBlank()) {
+                            if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+                                finalUrl = "https://$finalUrl"
+                            }
+                            showWebToPdfDialog = false
+                            Toast.makeText(context, "Loading webpage, please wait...", Toast.LENGTH_LONG).show()
+                            com.pdfsuny.app.utils.WebToPdfUtils.convertWebToPdf(context, finalUrl)
+                        } else {
+                            Toast.makeText(context, "Please enter a valid URL", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("Convert")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWebToPdfDialog = false }) {
                     Text("Cancel")
                 }
             }
@@ -3827,7 +3887,8 @@ enum class EditorTool {
     REMOVE_PASSWORD,
     ADD_WATERMARK,
     ADD_SIGNATURE,
-    ADD_STAMP
+    ADD_STAMP,
+    WEB_TO_PDF
 }
 
 
